@@ -17,6 +17,9 @@ import {
   PanelRightClose,
   Zap,
   Sparkles,
+  X,
+  ArrowRight,
+  CheckCircle2,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -31,6 +34,7 @@ import {
   MODE_META,
   type CreationMode,
 } from "@/lib/creation/models";
+import { calculateCredits } from "@/lib/credits/cost-engine";
 import { ModelPicker } from "@/components/create/workspace/model-picker";
 import {
   ModeSwitch,
@@ -42,6 +46,7 @@ import {
   type Attachment,
 } from "@/components/create/workspace/attachment-rail";
 import { PreviewPanel } from "@/components/create/workspace/preview-panel";
+import { WorkspaceLauncher } from "@/components/create/workspace/workspace-launcher";
 import { AgentPhases } from "@/components/create/workspace/agent-phases";
 import { BuildTimeline } from "@/components/create/workspace/build-timeline";
 import { OrchestrationNarrator } from "@/components/create/workspace/orchestration-narrator";
@@ -148,6 +153,158 @@ const MODE_STYLE = {
   },
 } satisfies Record<string, { topbar: string; composerRing: string; badge: { label: string; color: string } | null }>;
 
+// ─── Out-of-credits card ──────────────────────────────────────────────────────
+
+const PLAN_META: Record<string, { name: string; quota: number; nextPlan: string; nextPrice: number; nextCredits: string }> = {
+  free:     { name: "Free",     quota: 100,    nextPlan: "Starter", nextPrice: 20,  nextCredits: "10,000" },
+  starter:  { name: "Starter",  quota: 10_000, nextPlan: "Pro",     nextPrice: 50,  nextCredits: "25,000" },
+  pro:      { name: "Pro",      quota: 25_000, nextPlan: "Infinity",nextPrice: 100, nextCredits: "50,000+" },
+  infinity: { name: "Infinity", quota: 50_000, nextPlan: "Infinity",nextPrice: 100, nextCredits: "683,500" },
+};
+
+const UPGRADE_PERKS: Record<string, string[]> = {
+  free:     ["Manual model selection", "Edit & Build modes", "Custom domains", "100× more credits", "Priority orchestration"],
+  starter:  ["All frontier models", "Multi-agent orchestration", "Advanced analytics", "API access", "5 collaborators"],
+  pro:      ["Dedicated compute", "Enterprise concurrency", "White-label", "Custom SLAs", "SSO / SAML"],
+  infinity: ["Custom SLAs expansion", "Dedicated runtime", "Priority infra"],
+};
+
+function OutOfCreditsCard({
+  planId,
+  totalUsed,
+  resetAt,
+  onDismiss,
+}: {
+  planId: string;
+  totalUsed: number;
+  resetAt: string | null;
+  onDismiss: () => void;
+}) {
+  const meta = PLAN_META[planId] ?? PLAN_META.free;
+  const perks = UPGRADE_PERKS[planId] ?? UPGRADE_PERKS.free;
+  const daysLeft = resetAt
+    ? Math.max(0, Math.ceil((new Date(resetAt).getTime() - Date.now()) / 86_400_000))
+    : null;
+  // Estimate at ~50 credits/generation average
+  const estGens = Math.floor(meta.quota / 50);
+  const usedPct = Math.min(100, Math.round((totalUsed / meta.quota) * 100));
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+      className="mt-4 overflow-hidden rounded-2xl bg-gradient-to-br from-[hsl(var(--background))] via-[hsl(var(--surface))] to-[hsl(var(--background))] ring-1 ring-border/80 shadow-[0_8px_32px_-8px_rgba(0,0,0,0.35)]"
+    >
+      {/* Top gradient stripe */}
+      <div className="h-[2px] w-full bg-gradient-to-r from-violet-600 via-accent to-sky-500" />
+
+      <div className="px-5 pt-5 pb-5">
+        {/* Header row */}
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500/15 to-accent/20 ring-1 ring-accent/25">
+              <Zap className="size-5 text-accent" strokeWidth={1.75} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <p className="text-[14.5px] font-semibold text-foreground">Orchestration limit reached</p>
+                <span className="rounded-full bg-surface px-2 py-0.5 text-[10px] font-semibold text-muted-foreground ring-1 ring-border">
+                  {meta.name} plan
+                </span>
+              </div>
+              <p className="mt-0.5 text-[12px] text-muted-foreground leading-relaxed">
+                You&apos;ve used all {meta.quota.toLocaleString()} monthly credits.
+                {daysLeft !== null && daysLeft > 0 && (
+                  <span className="ml-1 text-muted-foreground/70">Resets in {daysLeft}d.</span>
+                )}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onDismiss}
+            className="shrink-0 rounded-lg p-1 text-muted-foreground/50 transition hover:bg-surface hover:text-muted-foreground"
+          >
+            <X className="size-3.5" strokeWidth={2} />
+          </button>
+        </div>
+
+        {/* Usage meter */}
+        <div className="mt-4 rounded-xl bg-surface/60 px-4 py-3 ring-1 ring-border/60">
+          <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-2">
+            <span className="font-medium">This period&apos;s usage</span>
+            <span className="tabular-nums font-semibold text-foreground">
+              {totalUsed.toLocaleString()} / {meta.quota.toLocaleString()} credits
+            </span>
+          </div>
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-border/60">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-accent to-violet-500"
+              style={{ width: `${usedPct}%` }}
+            />
+          </div>
+          <p className="mt-1.5 text-[10.5px] text-muted-foreground/70">
+            ~{estGens} generations / month at average model cost
+          </p>
+        </div>
+
+        {/* Divider */}
+        <div className="my-4 border-t border-border/60" />
+
+        {/* Suggested plan */}
+        <p className="mb-2.5 text-[10.5px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+          Recommended upgrade
+        </p>
+
+        <div className="rounded-xl bg-gradient-to-br from-accent/8 via-background to-violet-500/8 px-4 py-3.5 ring-1 ring-accent/20">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div>
+              <p className="text-[14px] font-bold tracking-tight text-foreground">{meta.nextPlan}</p>
+              <p className="text-[11.5px] text-muted-foreground">{meta.nextCredits} orchestration credits / month</p>
+            </div>
+            <div className="text-right shrink-0">
+              <p className="text-[22px] font-bold tracking-tight text-foreground">
+                ${meta.nextPrice}
+              </p>
+              <p className="text-[10.5px] text-muted-foreground">/ month</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {perks.map((f) => (
+              <span
+                key={f}
+                className="inline-flex items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-[10.5px] font-medium text-accent ring-1 ring-accent/15"
+              >
+                <CheckCircle2 className="size-2.5" strokeWidth={2.5} />
+                {f}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {/* CTA buttons */}
+        <div className="mt-4 flex items-stretch gap-2">
+          <Link
+            href="/pricing"
+            className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-accent to-violet-600 px-4 py-2.5 text-[13px] font-semibold text-white shadow-[0_4px_16px_-4px_hsl(var(--accent)/0.45)] transition hover:opacity-90 active:scale-[0.98]"
+          >
+            <Sparkles className="size-3.5" strokeWidth={2} />
+            Upgrade to {meta.nextPlan}
+            <ArrowRight className="size-3.5" strokeWidth={2} />
+          </Link>
+          <Link
+            href="/pricing"
+            className="inline-flex items-center gap-1.5 rounded-xl px-3.5 text-[12px] font-medium text-muted-foreground ring-1 ring-border transition hover:bg-surface hover:text-foreground"
+          >
+            View all plans
+          </Link>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
 // ─── Workspace ────────────────────────────────────────────────────────────────
 
 export interface CreationWorkspaceProps {
@@ -167,7 +324,7 @@ export function CreationWorkspace({
 }: CreationWorkspaceProps) {
   const supabase = createClient();
   const { profile } = useAuthStore();
-  const { deductOptimistic } = useCreditsStore();
+  const { deductOptimistic, remaining, isConfirmed, totalUsedThisPeriod, resetAt } = useCreditsStore();
 
   // ─── UI state ───────────────────────────────────────────────────────────────
   const [input, setInput] = React.useState(initialPrompt);
@@ -178,6 +335,8 @@ export function CreationWorkspace({
   const [showPreview, setShowPreview] = React.useState(true);
   const [creditError, setCreditError] = React.useState(false);
   const [conversationId, setConversationId] = React.useState<string | null>(null);
+  // Panel mode: "preview" or "dashboard" — only active after first generation
+  const [panelMode, setPanelMode] = React.useState<"preview" | "dashboard">("preview");
 
   const fileRef = React.useRef<HTMLInputElement>(null);
   const scrollRef = React.useRef<HTMLDivElement>(null);
@@ -200,8 +359,9 @@ export function CreationWorkspace({
             setCreditError(true);
           } else if (res.ok) {
             setCreditError(false);
-            const m = CREATION_MODELS.find((x) => x.id === modelId);
-            deductOptimistic(m?.credits ?? 1);
+            // Use profitability-validated credit cost (3x margin guaranteed)
+            const creditCost = calculateCredits(modelId, modeRef.current);
+            deductOptimistic(creditCost);
           }
           return res;
         },
@@ -301,6 +461,14 @@ export function CreationWorkspace({
     const text = input.trim();
     if (!text || isBusy) return;
 
+    // Credit gate — only block if the server has confirmed credits are exhausted.
+    // While `isConfirmed` is false the store holds the default free-plan quota,
+    // so we never block a user who simply hasn't synced yet.
+    if (isConfirmed && remaining <= 0) {
+      setCreditError(true);
+      return;
+    }
+
     let composed = text;
 
     // Attachments: include real names + sizes. Binary content is not uploaded
@@ -357,8 +525,17 @@ export function CreationWorkspace({
     <DropZone
       onFiles={onFiles}
       disabled={isBusy}
-      className="flex h-[calc(100vh-3.5rem)] w-full overflow-hidden"
+      className="flex h-[calc(100vh-3.5rem)] w-full flex-col overflow-hidden"
     >
+      {/* Workspace header — WorkspaceName / AppName breadcrumb */}
+      <WorkspaceLauncher
+        projectName={project?.name}
+        isBusy={isBusy}
+      />
+
+      {/* Horizontal split: timeline + chat + preview */}
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+
       {/* BUILD TIMELINE sidebar (left, build mode only) */}
       <AnimatePresence initial={false}>
         {showBuildTimeline && (
@@ -459,19 +636,14 @@ export function CreationWorkspace({
               />
             )}
 
-            {/* Errors */}
+            {/* Out-of-credits upgrade card */}
             {creditError && (
-              <div className="mt-4 flex items-center gap-2 rounded-lg bg-amber-500/10 px-3 py-2 text-[12.5px] text-amber-600 ring-1 ring-amber-500/30">
-                <AlertCircle className="size-4 shrink-0" strokeWidth={1.75} />
-                Out of credits.{" "}
-                <Link
-                  href="/pricing"
-                  className="font-semibold underline underline-offset-2"
-                >
-                  Upgrade
-                </Link>{" "}
-                to keep going.
-              </div>
+              <OutOfCreditsCard
+                planId={profile?.plan_id ?? "free"}
+                totalUsed={totalUsedThisPeriod}
+                resetAt={resetAt}
+                onDismiss={() => setCreditError(false)}
+              />
             )}
             {error && !creditError && (
               <div className="mt-4 flex items-start gap-2 rounded-lg bg-destructive/10 px-3 py-2 text-[12.5px] text-destructive ring-1 ring-destructive/20">
@@ -593,7 +765,7 @@ export function CreationWorkspace({
         </div>
       </div>
 
-      {/* RIGHT: live preview */}
+      {/* RIGHT: preview + dashboard panel */}
       <AnimatePresence initial={false}>
         {showPreview && (
           <motion.aside
@@ -602,24 +774,82 @@ export function CreationWorkspace({
             animate={{ width: 540, opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
             transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-            className="hidden shrink-0 overflow-hidden border-l border-border bg-atmosphere lg:block"
+            className="hidden shrink-0 flex-col overflow-hidden border-l border-border bg-atmosphere lg:flex"
           >
-            <div className="h-full p-3">
-              <PreviewPanel
-                url={project?.previewUrl ?? null}
-                appName={project?.name ?? null}
-                thinking={isBusy}
-                editMode={mode === "edit"}
-                onEditTarget={(info) => {
-                  setInput(`[Targeting: ${info.section}] `);
-                  const el = document.querySelector("textarea");
-                  el?.focus();
-                }}
-              />
+            {/* Panel mode bar — only shown after generation */}
+            {messages.length > 0 && (
+              <div className="flex shrink-0 items-center gap-1 border-b border-border/60 bg-background/70 px-3 py-1.5 backdrop-blur-sm">
+                <button
+                  type="button"
+                  onClick={() => setPanelMode("preview")}
+                  className={cn(
+                    "rounded-lg px-3 py-1 text-[12px] font-medium transition",
+                    panelMode === "preview"
+                      ? "bg-surface text-foreground ring-1 ring-border"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  Preview
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPanelMode("dashboard")}
+                  className={cn(
+                    "rounded-lg px-3 py-1 text-[12px] font-medium transition",
+                    panelMode === "dashboard"
+                      ? "bg-surface text-foreground ring-1 ring-border"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  Dashboard
+                </button>
+              </div>
+            )}
+
+            {/* Panel content */}
+            <div className="min-h-0 flex-1 overflow-hidden">
+              <AnimatePresence mode="wait" initial={false}>
+                {panelMode === "preview" || messages.length === 0 ? (
+                  <motion.div
+                    key="preview-pane"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.15 }}
+                    className="h-full p-3"
+                  >
+                    <PreviewPanel
+                      url={project?.previewUrl ?? null}
+                      appName={project?.name ?? null}
+                      thinking={isBusy}
+                      editMode={mode === "edit"}
+                      hasGenerated={messages.length > 0 && !!project?.previewUrl}
+                      onEditTarget={(info) => {
+                        setInput(`[Targeting: ${info.section}] `);
+                        const el = document.querySelector("textarea");
+                        el?.focus();
+                      }}
+                    />
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="dashboard-pane"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.15 }}
+                    className="h-full overflow-y-auto p-4"
+                  >
+                    <InlineDashboard project={project} isBusy={isBusy} />
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           </motion.aside>
         )}
       </AnimatePresence>
+
+      </div>{/* end horizontal split */}
     </DropZone>
   );
 }
@@ -664,13 +894,13 @@ function EmptyHero({
       transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
       className="mx-auto max-w-2xl py-10 text-center"
     >
-      <div className="mx-auto mb-5 flex size-12 items-center justify-center rounded-2xl bg-gradient-to-br from-[#1e6bff] to-[#7eb7ff] shadow-[0_18px_40px_-12px_rgba(30,107,255,0.55)]">
+      <div className="mx-auto mb-5 flex size-14 items-center justify-center">
         <Image
           src="/logo.png"
           alt=""
-          width={32}
-          height={32}
-          className="drop-shadow"
+          width={56}
+          height={56}
+          className="object-contain"
           priority
         />
       </div>
@@ -703,5 +933,117 @@ function EmptyHero({
         ))}
       </div>
     </motion.div>
+  );
+}
+
+// ─── Inline dashboard (right panel dashboard mode) ───────────────────────────
+
+function InlineDashboard({
+  project,
+  isBusy,
+}: {
+  project: { id: string; name: string; previewUrl: string | null } | null;
+  isBusy: boolean;
+}) {
+  const appName = project?.name ?? "Untitled App";
+
+  const stats = [
+    { label: "Status", value: isBusy ? "Building…" : "Live", color: isBusy ? "text-amber-500" : "text-emerald-500" },
+    { label: "Deploy", value: "Vercel Edge", color: "text-muted-foreground" },
+    { label: "Region", value: "iad1", color: "text-muted-foreground" },
+    { label: "Runtime", value: "Next.js 15", color: "text-muted-foreground" },
+  ];
+
+  const sections = [
+    {
+      title: "Overview",
+      items: [
+        { label: "App name", value: appName },
+        { label: "Framework", value: "Next.js (App Router)" },
+        { label: "Visibility", value: "Private" },
+        { label: "Last deploy", value: "Just now" },
+      ],
+    },
+    {
+      title: "Environment",
+      items: [
+        { label: "NODE_ENV", value: "production" },
+        { label: "NEXT_PUBLIC_APP_URL", value: "https://dreamos86.com" },
+      ],
+    },
+  ];
+
+  return (
+    <div className="space-y-4">
+      {/* App identity row */}
+      <div className="flex items-center gap-3 rounded-xl bg-surface px-4 py-3 ring-1 ring-border">
+        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-accent/30 to-violet-500/30 text-[15px] font-bold text-foreground">
+          {appName[0]?.toUpperCase() ?? "A"}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[13px] font-semibold text-foreground">{appName}</p>
+          <p className="text-[11px] text-muted-foreground">App workspace</p>
+        </div>
+        {isBusy && <Loader2 className="size-4 shrink-0 animate-spin text-accent" strokeWidth={1.75} />}
+      </div>
+
+      {/* Quick stats */}
+      <div className="grid grid-cols-2 gap-2">
+        {stats.map((s) => (
+          <div key={s.label} className="rounded-xl bg-surface px-3 py-2.5 ring-1 ring-border">
+            <p className="text-[10.5px] text-muted-foreground">{s.label}</p>
+            <p className={cn("mt-0.5 text-[12.5px] font-semibold", s.color)}>{s.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Details sections */}
+      {sections.map((sec) => (
+        <div key={sec.title} className="rounded-xl bg-surface ring-1 ring-border">
+          <div className="border-b border-border px-4 py-2.5">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{sec.title}</p>
+          </div>
+          <div className="divide-y divide-border">
+            {sec.items.map((item) => (
+              <div key={item.label} className="flex items-center justify-between gap-3 px-4 py-2.5">
+                <p className="text-[12px] text-muted-foreground">{item.label}</p>
+                <p className="truncate text-[12px] font-medium text-foreground">{item.value}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+
+      {/* Domains */}
+      <div className="rounded-xl bg-surface ring-1 ring-border">
+        <div className="border-b border-border px-4 py-2.5">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Domains</p>
+        </div>
+        <div className="px-4 py-3">
+          {project?.previewUrl ? (
+            <a
+              href={project.previewUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 text-[12.5px] text-accent hover:underline underline-offset-2"
+            >
+              {project.previewUrl}
+            </a>
+          ) : (
+            <p className="text-[12px] text-muted-foreground">No domain assigned yet.</p>
+          )}
+        </div>
+      </div>
+
+      {/* App usage */}
+      <div className="rounded-xl bg-surface ring-1 ring-border">
+        <div className="border-b border-border px-4 py-2.5">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Usage this session</p>
+        </div>
+        <div className="px-4 py-3 text-[12px] text-muted-foreground">
+          Orchestration calls and model usage will appear here after generation completes.
+        </div>
+      </div>
+    </div>
   );
 }

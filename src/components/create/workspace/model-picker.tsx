@@ -14,10 +14,13 @@ import {
   Coins,
   Search,
   CheckCheck,
+  Sparkles,
+  Lock,
 } from "lucide-react";
 import type { CreationModel, Rating1to5, ModelSpecialization } from "@/lib/creation/models";
 import { CREATION_MODELS } from "@/lib/creation/models";
 import { cn } from "@/lib/utils";
+import { useAuthStore } from "@/lib/stores/auth-store";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -26,6 +29,10 @@ const PROVIDER_LABELS: Record<string, string> = {
   openai: "OpenAI",
   google: "Google",
   deepseek: "DeepSeek",
+  xai: "xAI",
+  meta: "Meta",
+  cohere: "Cohere",
+  mistral: "Mistral",
 };
 
 const PROVIDER_COLOR: Record<string, string> = {
@@ -33,6 +40,10 @@ const PROVIDER_COLOR: Record<string, string> = {
   openai: "bg-emerald-500/10 text-emerald-600",
   google: "bg-blue-500/10 text-blue-600",
   deepseek: "bg-violet-500/10 text-violet-600",
+  xai: "bg-red-500/10 text-red-600",
+  meta: "bg-sky-500/10 text-sky-600",
+  cohere: "bg-fuchsia-500/10 text-fuchsia-600",
+  mistral: "bg-orange-400/10 text-orange-500",
 };
 
 const SPEC_BADGE: Record<ModelSpecialization, { label: string; color: string }> = {
@@ -184,6 +195,9 @@ export function ModelPicker({
   disabled?: boolean;
   className?: string;
 }) {
+  const { profile } = useAuthStore();
+  const isFree = !profile?.plan_id || profile.plan_id === "free";
+
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
   const [hoverId, setHoverId] = React.useState<string | null>(null);
@@ -193,6 +207,22 @@ export function ModelPicker({
   const searchRef = React.useRef<HTMLInputElement>(null);
   const [mounted, setMounted] = React.useState(false);
   const current = CREATION_MODELS.find((m) => m.id === value) ?? CREATION_MODELS[0];
+
+  // Free users always use auto-routing — show locked "Automatic" pill (hooks still called above)
+  if (isFree) {
+    return (
+      <div className={cn("relative", className)}>
+        <div className="flex h-7 items-center gap-1.5 rounded-md bg-surface px-2 text-[12px] font-medium text-muted-foreground ring-1 ring-border cursor-default select-none">
+          <Sparkles className="size-3 text-accent/70" strokeWidth={1.75} />
+          <span>Automatic</span>
+          <span className="rounded-full bg-accent/10 px-1 py-0.5 text-[9px] font-bold text-accent">
+            AUTO
+          </span>
+          <Lock className="size-3 text-muted-foreground/40 ml-0.5" strokeWidth={1.65} />
+        </div>
+      </div>
+    );
+  }
 
   React.useEffect(() => { setMounted(true); }, []);
 

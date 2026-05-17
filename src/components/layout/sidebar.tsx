@@ -3,12 +3,16 @@
 import * as React from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { LogoIcon } from "@/components/ui/logo-icon";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, ChevronRight } from "lucide-react";
 import { navSections } from "@/config/navigation";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/lib/stores/auth-store";
+import { useCreditsStore } from "@/lib/stores/credits-store";
+import { useHydrated } from "@/lib/hooks/use-hydrated";
+import { Zap } from "lucide-react";
 
 type SidebarProps = {
   mobileOpen: boolean;
@@ -92,10 +96,16 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = React.useState(true);
   const { profile } = useAuthStore();
+  const remaining = useCreditsStore((s) => s.remaining);
+  const hydrated = useHydrated();
+  const MONTHLY_QUOTA = 100;
+
+  const OWNER_EMAIL = "dreamos86app@gmail.com";
+  const isOwner = profile?.email === OWNER_EMAIL || profile?.is_admin === true;
 
   // Filter out admin section for non-admins
   const visibleSections = navSections.filter(
-    (s) => s.label !== "Admin" || profile?.is_admin,
+    (s) => s.label !== "Admin" || isOwner,
   );
 
   const nav = (
@@ -160,17 +170,7 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
             onClick={onMobileClose}
             title="DreamOS86"
           >
-            <span className="relative flex size-8 shrink-0 items-center justify-center">
-              <Image
-                src="/logo.png"
-                alt="DreamOS86"
-                width={32}
-                height={32}
-                className="object-contain drop-shadow-[0_2px_8px_rgba(30,107,255,0.25)]"
-                priority
-                loading="eager"
-              />
-            </span>
+            <LogoIcon size={30} />
             {!collapsed && (
               <span className="truncate text-[13.5px] font-semibold tracking-[-0.03em] text-foreground">
                 DreamOS86
@@ -199,19 +199,59 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
 
         {nav}
 
-        {/* Expand button (collapsed state) */}
-        {collapsed && (
-          <div className="hidden lg:flex justify-center pb-4">
-            <button
-              type="button"
-              onClick={() => setCollapsed(false)}
-              className="flex size-8 items-center justify-center rounded-md text-muted-foreground/60 transition hover:bg-surface hover:text-foreground"
-              aria-label="Expand sidebar"
-            >
-              <ChevronRight className="size-3.5" strokeWidth={2} />
-            </button>
-          </div>
-        )}
+        {/* Credits indicator + expand control */}
+        <div
+          className={cn(
+            "hidden lg:block shrink-0 border-t border-border",
+            collapsed ? "px-2 py-2" : "px-3 py-3",
+          )}
+        >
+          {collapsed ? (
+            <div className="flex flex-col items-center gap-2">
+              {/* Credits orb in collapsed state */}
+              {hydrated && (
+                <Link
+                  href="/credits"
+                  title={`${remaining} credits remaining`}
+                  className="flex size-8 items-center justify-center rounded-md text-muted-foreground/70 transition hover:bg-surface hover:text-accent"
+                >
+                  <Zap className="size-4" strokeWidth={1.65} />
+                </Link>
+              )}
+              <button
+                type="button"
+                onClick={() => setCollapsed(false)}
+                className="flex size-8 items-center justify-center rounded-md text-muted-foreground/60 transition hover:bg-surface hover:text-foreground"
+                aria-label="Expand sidebar"
+              >
+                <ChevronRight className="size-3.5" strokeWidth={2} />
+              </button>
+            </div>
+          ) : (
+            hydrated && (
+              <Link
+                href="/credits"
+                className="group block rounded-lg bg-muted/40 px-3 py-2.5 ring-1 ring-border transition hover:ring-accent/30"
+              >
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <div className="flex items-center gap-1.5 text-[11.5px] font-medium text-muted-foreground">
+                    <Zap className="size-3 text-accent" strokeWidth={1.75} />
+                    Credits
+                  </div>
+                  <span className="text-[12px] font-semibold tabular-nums text-foreground">
+                    {remaining} <span className="text-muted-foreground font-normal">/ {MONTHLY_QUOTA}</span>
+                  </span>
+                </div>
+                <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full bg-accent transition-all duration-500"
+                    style={{ width: `${Math.min(100, (remaining / MONTHLY_QUOTA) * 100)}%` }}
+                  />
+                </div>
+              </Link>
+            )
+          )}
+        </div>
       </aside>
     </>
   );

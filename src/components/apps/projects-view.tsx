@@ -2,10 +2,11 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   Plus, Search, Star, LayoutGrid, List,
-  Sparkles, Loader2, ArrowUpRight, Upload,
+  Sparkles, Loader2, ArrowUpRight, Upload, AppWindow,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";  
 import { EmptyState } from "@/components/ui/empty-state";
@@ -13,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { variants } from "@/lib/motion";
 import { createClient } from "@/lib/supabase/client";
 import { useAuthStore } from "@/lib/stores/auth-store";
+import { useTimedLoading } from "@/lib/hooks/use-timed-loading";
 import type { Project } from "@/lib/supabase/types";
 import { ZipImportWizard } from "@/components/apps/zip-import-wizard";
 
@@ -89,10 +91,12 @@ function ProjectCard({ project }: { project: Project }) {
 }
 
 export function ProjectsView() {
+  const router = useRouter();
   const supabase = createClient();
   const { profile } = useAuthStore();
   const [projects, setProjects] = React.useState<Project[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const isLoading = useTimedLoading(loading, 1000);
   const [search, setSearch] = React.useState("");
   const [view, setView] = React.useState<"grid" | "list">("grid");
   const [showImport, setShowImport] = React.useState(false);
@@ -162,7 +166,7 @@ export function ProjectsView() {
           <Upload className="size-3.5" strokeWidth={1.75} />
           Import ZIP
         </Button>
-        <Button variant="accent" size="sm" className="gap-1.5">
+        <Button variant="accent" size="sm" className="gap-1.5" onClick={() => router.push("/")}>
           <Plus className="size-3.5" strokeWidth={2} />
           New project
         </Button>
@@ -181,7 +185,7 @@ export function ProjectsView() {
       )}
 
       {/* Content */}
-      {loading ? (
+      {isLoading ? (
         <div className="flex items-center justify-center py-24">
           <div className="flex flex-col items-center gap-3">
             <div className="relative flex size-12 items-center justify-center">
@@ -200,7 +204,7 @@ export function ProjectsView() {
             <div className="relative">
               <div className="absolute -inset-8 animate-pulse rounded-full bg-accent/5 blur-2xl" />
               <div className="relative flex size-20 items-center justify-center rounded-2xl bg-gradient-to-br from-accent/20 to-violet-500/20 ring-1 ring-accent/20">
-                <Sparkles className="size-9 text-accent" strokeWidth={1.5} />
+                <AppWindow className="size-9 text-accent" strokeWidth={1.25} />
               </div>
             </div>
             <div className="max-w-md space-y-2">
@@ -208,7 +212,7 @@ export function ProjectsView() {
                 Build your first app
               </h2>
               <p className="text-[14px] leading-relaxed text-muted-foreground">
-                Describe what you want in plain English. DreamOS86 generates routes, UI, database schema, auth, and APIs — all at once.
+                Describe what you want in plain English. DreamOS86 generates routes, UI, database schema, auth, and APIs.
               </p>
             </div>
             <div className="flex flex-col items-center gap-3 sm:flex-row">
@@ -216,7 +220,6 @@ export function ProjectsView() {
                 href="/"
                 className="flex items-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-[13.5px] font-semibold text-white transition hover:bg-accent/90"
               >
-                <Sparkles className="size-4" strokeWidth={2} />
                 Start building
               </Link>
               <Link
@@ -228,18 +231,19 @@ export function ProjectsView() {
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               {[
-                { label: "SaaS dashboard", desc: "Auth, billing, analytics" },
-                { label: "Mobile app", desc: "React Native + API" },
-                { label: "AI tool", desc: "LLM-powered workflow" },
+                { label: "SaaS dashboard", prompt: "Build a SaaS dashboard with analytics, team management, billing, and role-based access control.", desc: "Auth, billing, analytics" },
+                { label: "Mobile app", prompt: "Build a mobile app with React Native, authentication, push notifications, and a REST API backend.", desc: "React Native + API" },
+                { label: "AI tool", prompt: "Build an AI-powered tool with LLM integration, streaming responses, prompt management, and user history.", desc: "LLM-powered workflow" },
               ].map((idea) => (
-                <Link
+                <button
                   key={idea.label}
-                  href={`/?prompt=Build a ${idea.label.toLowerCase()}`}
+                  type="button"
+                  onClick={() => router.push(`/create?prompt=${encodeURIComponent(idea.prompt)}&mode=build`)}
                   className="rounded-xl bg-surface p-4 text-left ring-1 ring-border transition hover:ring-accent/30 hover:bg-surface/80"
                 >
                   <p className="text-[13px] font-semibold text-foreground">{idea.label}</p>
                   <p className="mt-0.5 text-[11.5px] text-muted-foreground">{idea.desc}</p>
-                </Link>
+                </button>
               ))}
             </div>
           </motion.div>

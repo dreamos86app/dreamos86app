@@ -467,6 +467,7 @@ function ConnectedAccountsSection() {
 function ProfileSection() {
   const supabase = createClient();
   const { profile, setProfile } = useAuthStore();
+  const router = useRouter();
   const displayName = profile?.full_name ?? profile?.email?.split("@")[0] ?? "User";
   const displayEmail = profile?.email ?? "";
 
@@ -495,6 +496,7 @@ function ProfileSection() {
     } else if (data) {
       setProfile(data as typeof profile);
       toast.success("Profile updated");
+      router.refresh();
     }
     setSaving(false);
   }
@@ -515,21 +517,24 @@ function ProfileSection() {
 
     setUploading(true);
     try {
-      const ext = file.type.split("/")[1].replace("jpeg", "jpg");
+      const ext = file.type === "image/webp" ? "webp" : file.type === "image/jpeg" ? "jpg" : "png";
       const filePath = `${profile.id}/avatar.${ext}`;
 
-      const { error: uploadErr } = await supabase.storage
-        .from("avatars")
-        .upload(filePath, file, { upsert: true });
+      // Use the API route for avatar upload — handles bucket creation + RLS gracefully
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("path", filePath);
 
-      if (uploadErr) throw uploadErr;
-
-      const { data: urlData } = supabase.storage.from("avatars").getPublicUrl(filePath);
-      const publicUrl = `${urlData.publicUrl}?t=${Date.now()}`;
+      const res = await fetch("/api/upload/avatar", { method: "POST", body: formData });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Upload failed" }));
+        throw new Error(err.error ?? "Upload failed");
+      }
+      const { publicUrl } = await res.json();
 
       const { data, error: updateErr } = await supabase
         .from("profiles")
-        .update({ avatar_url: publicUrl })
+        .update({ avatar_url: `${publicUrl}?t=${Date.now()}` })
         .eq("id", profile.id)
         .select()
         .single();
@@ -538,9 +543,11 @@ function ProfileSection() {
       if (data) {
         setProfile(data as typeof profile);
         toast.success("Avatar updated");
+        router.refresh();
       }
-    } catch {
-      toast.error("Failed to upload avatar. Please try again.");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      toast.error(`Failed to upload avatar: ${msg}`);
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";

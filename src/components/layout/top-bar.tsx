@@ -1,14 +1,13 @@
 "use client";
 
-import Link from "next/link";
-import { Menu, Bell, Search } from "lucide-react";
+import { Menu, Search } from "lucide-react";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { IconButton } from "@/components/ui/icon-button";
 import { UserMenu } from "@/components/layout/user-menu";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/lib/stores/auth-store";
-import { useNotificationsStore } from "@/lib/stores/notifications-store";
 import { useCommandCenter } from "@/components/command/command-center";
+import { NotificationBell } from "@/components/notifications/notification-panel";
 
 type TopBarProps = {
   mode: "create" | "standard";
@@ -20,7 +19,6 @@ type TopBarProps = {
 export function TopBar({ mode, title, subtitle, onMenuClick }: TopBarProps) {
   const isCreate = mode === "create";
   useAuthStore(); // profile available via UserMenu
-  const { unreadCount } = useNotificationsStore();
   const { openCommandCenter } = useCommandCenter();
 
   return (
@@ -70,17 +68,8 @@ export function TopBar({ mode, title, subtitle, onMenuClick }: TopBarProps) {
 
         <ThemeToggle />
 
-        {/* Notifications — real unread count */}
-        <Link
-          href="/settings/notifications"
-          className="relative inline-flex size-8 items-center justify-center rounded-[var(--radius-md)] text-muted-foreground transition hover:bg-surface hover:text-foreground"
-          aria-label="Notifications"
-        >
-          <Bell className="size-[17px]" strokeWidth={1.55} />
-          {unreadCount > 0 && (
-            <span className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-accent ring-2 ring-background" />
-          )}
-        </Link>
+        {/* Notifications bell — opens in-app panel */}
+        <NotificationBell />
 
         <div className="hidden h-7 w-px bg-border sm:block" />
 

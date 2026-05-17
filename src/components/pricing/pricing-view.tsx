@@ -26,6 +26,8 @@ interface Plan {
   badge?: string;
   models: string;
   cta: string;
+  /** Monthly credit allowance shown on the card */
+  monthlyCredits: string;
 }
 
 const PLANS: Plan[] = [
@@ -34,14 +36,17 @@ const PLANS: Plan[] = [
     name: "Free",
     price: 0,
     tagline: "Start building for free. No card required.",
-    models: "Fast models (auto-selected)",
+    models: "Fast models (auto-routed)",
+    monthlyCredits: "100 credits / mo",
     features: [
-      "Starter orchestration capacity",
+      "100 orchestration credits / month",
       "3 active projects",
-      "Discuss mode",
+      "Discuss mode only",
       "Public deployments",
+      "Automatic model routing",
+      "Basic build concurrency",
     ],
-    notIncluded: ["Premium models", "Custom domains", "Build mode", "Team access"],
+    notIncluded: ["Manual model selection", "Custom domains", "Build & Edit mode", "Team access", "Analytics"],
     cta: "Get started free",
   },
   {
@@ -50,14 +55,16 @@ const PLANS: Plan[] = [
     price: 20,
     tagline: "For individuals shipping real products.",
     models: "Standard + Premium models",
+    monthlyCredits: "10,000 credits / mo",
     features: [
-      "Full orchestration capacity",
+      "10,000 orchestration credits / month",
       "Unlimited projects",
       "Discuss, Edit & Build modes",
-      "Premium AI models",
+      "Manual model selection",
       "Custom domains",
       "Remove watermark",
       "Full source code export",
+      "Premium exports",
       "Email support",
     ],
     cta: "Get Starter",
@@ -70,11 +77,11 @@ const PLANS: Plan[] = [
     highlight: true,
     badge: "Most Popular",
     models: "All models including Opus & GPT-5.5",
+    monthlyCredits: "25,000 credits / mo",
     features: [
-      "Advanced orchestration capacity",
-      "Unlimited projects",
-      "All frontier models (Opus 4, GPT-5.5, Gemini Pro)",
-      "Multi-agent orchestration",
+      "25,000 orchestration credits / month",
+      "All frontier models (Opus 4.7, GPT-5.5, Gemini 2.5 Pro)",
+      "Multi-agent orchestration pipelines",
       "Production-scale infrastructure",
       "Unlimited custom domains",
       "5 collaborators",
@@ -89,36 +96,106 @@ const PLANS: Plan[] = [
     name: "Infinity",
     price: 100,
     priceSuffix: "from",
-    tagline: "Orchestration-scale AI for power users & teams.",
-    models: "All models + Ultra orchestration",
+    tagline: "Enterprise orchestration platform for power teams.",
+    models: "All models + dedicated compute",
+    monthlyCredits: "50k – 683.5k credits / mo",
     features: [
-      "Maximum orchestration depth",
-      "Unlimited everything",
-      "Ultra models + orchestration pipelines",
+      "50k–683.5k orchestration credits / month",
+      "Enterprise-grade concurrency (parallel agents)",
+      "Dedicated runtime & priority compute",
+      "White-label platform",
       "Unlimited collaborators",
-      "Dedicated compute",
-      "Custom SLAs",
-      "White-label",
+      "Custom SLAs & uptime guarantees",
       "SSO / SAML",
-      "Volume scaling with progressive discounts",
+      "Advanced infrastructure controls",
+      "5% enterprise volume discount (Tiers IV+)",
     ],
     cta: "Get Infinity",
   },
 ];
 
-// Infinity sub-tiers — perfectly clean $100 / 2.5k intervals.
-// Simple, predictable, enterprise-feeling.
-// Always display compact (2.5k, 5k, 7.5k…) — never raw integers.
-const INFINITY_TIERS = [
-  { label: "Infinity I",    price: 100, credits: 2500,  display: "2.5k" },
-  { label: "Infinity II",   price: 200, credits: 5000,  display: "5k" },
-  { label: "Infinity III",  price: 300, credits: 7500,  display: "7.5k" },
-  { label: "Infinity IV",   price: 400, credits: 10000, display: "10k" },
-  { label: "Infinity V",    price: 500, credits: 12500, display: "12.5k" },
-  { label: "Infinity VI",   price: 600, credits: 15000, display: "15k" },
-  { label: "Infinity VII",  price: 700, credits: 17500, display: "17.5k" },
-  { label: "Infinity VIII", price: 800, credits: 20000, display: "20k" },
+// ─── Infinity pricing engine ──────────────────────────────────────────────────
+//
+// ECONOMY RULE (NORMALIZED):
+//   $1 = 500 credits across ALL plans with NO exceptions.
+//   Plans differ by PLATFORM POWER: concurrency, models, orchestration, infra.
+//   NOT by credits-per-dollar ratio.
+//
+//   Base rate: 500 credits / $ (same as Pro: 25,000 credits / $50)
+//   Credits per tier = rawPrice × 500 (rounded to clean numbers).
+//
+//   Tiers I–III: standard pricing at base rate.
+//   Tiers IV–VIII: 5% enterprise volume discount on the monthly price.
+//     → discount reduces price, credits stay at rawPrice × 500.
+//     → effective CPD slightly above 500 (by exactly 1/0.95 ≈ 1.053×).
+//     → this is the ONLY permitted value improvement — via explicit discount.
+//
+//   Annual billing: 20% off monthly for all paid plans.
+
+const BASE_CREDITS_PER_DOLLAR = 500;
+
+const INFINITY_TIERS: Array<{
+  label: string;
+  rawPrice: number;    // undiscounted monthly price → credits = rawPrice × 500
+  price: number;       // display monthly price (post 5% enterprise discount)
+  credits: number;     // orchestration credits / month
+  display: string;     // human-friendly credit count
+  hasDiscount: boolean;
+}> = [
+  { label: "Infinity I",    rawPrice: 100,  price: 100,  credits:    50_000, display:  "50k",  hasDiscount: false },
+  { label: "Infinity II",   rawPrice: 175,  price: 175,  credits:    87_500, display: "87.5k", hasDiscount: false },
+  { label: "Infinity III",  rawPrice: 280,  price: 280,  credits:   140_000, display:  "140k", hasDiscount: false },
+  { label: "Infinity IV",   rawPrice: 442,  price: 420,  credits:   221_000, display:  "221k", hasDiscount: true  },
+  { label: "Infinity V",    rawPrice: 632,  price: 600,  credits:   316_000, display:  "316k", hasDiscount: true  },
+  { label: "Infinity VI",   rawPrice: 884,  price: 840,  credits:   442_000, display:  "442k", hasDiscount: true  },
+  { label: "Infinity VII",  rawPrice: 1179, price: 1120, credits:   589_500, display: "589.5k", hasDiscount: true },
+  { label: "Infinity VIII", rawPrice: 1367, price: 1299, credits:   683_500, display: "683.5k", hasDiscount: true },
 ];
+
+/**
+ * Normalizes credits for all tiers to guarantee linear CPD at rawPrice.
+ * Returns a validated copy — call this when displaying or verifying.
+ */
+export function normalizeCreditEconomy() {
+  return INFINITY_TIERS.map((t) => ({
+    ...t,
+    credits: Math.round(t.rawPrice * BASE_CREDITS_PER_DOLLAR),
+  }));
+}
+
+/**
+ * Validates that every Infinity tier maintains $1 = 500 credits at rawPrice.
+ * Discounted tiers may have slightly higher effective CPD (max 1/0.95 ≈ 526).
+ */
+export function validateCreditLinearity() {
+  const TOLERANCE = 0.01; // 1% to catch float rounding
+  const MAX_DISCOUNT_FACTOR = 1 / 0.95 + TOLERANCE; // max CPD uplift from 5% discount
+  for (const t of INFINITY_TIERS) {
+    const baseCPD = t.credits / t.rawPrice;
+    if (Math.abs(baseCPD - BASE_CREDITS_PER_DOLLAR) / BASE_CREDITS_PER_DOLLAR > TOLERANCE) {
+      throw new Error(
+        `[pricing] Tier ${t.label}: base CPD ${baseCPD.toFixed(1)} deviates from ${BASE_CREDITS_PER_DOLLAR} credits/$ (rawPrice=${t.rawPrice}, credits=${t.credits})`,
+      );
+    }
+    const effectiveCPD = t.credits / t.price;
+    if (t.hasDiscount && effectiveCPD > BASE_CREDITS_PER_DOLLAR * MAX_DISCOUNT_FACTOR) {
+      throw new Error(
+        `[pricing] Tier ${t.label}: discounted CPD ${effectiveCPD.toFixed(1)} exceeds max allowed ${(BASE_CREDITS_PER_DOLLAR * MAX_DISCOUNT_FACTOR).toFixed(1)}`,
+      );
+    }
+  }
+  return true;
+}
+
+/** @deprecated Use validateCreditLinearity */
+export function validatePlanEconomics() {
+  return validateCreditLinearity();
+}
+
+// Dev-only integrity check
+if (process.env.NODE_ENV === "development") {
+  try { validateCreditLinearity(); } catch (e) { console.error(e); }
+}
 
 // ─── Payments coming soon modal ───────────────────────────────────────────────
 
@@ -173,10 +250,12 @@ function PlanCard({
   plan,
   onSelect,
   currentPlanId,
+  isAnnual = false,
 }: {
   plan: Plan;
   onSelect: (planId: string) => void;
   currentPlanId?: string;
+  isAnnual?: boolean;
 }) {
   const isCurrent = currentPlanId === plan.id || (plan.id === "free" && !currentPlanId);
   const isInfinity = plan.id === "infinity";
@@ -193,7 +272,20 @@ function PlanCard({
     return () => document.removeEventListener("mousedown", handler);
   }, [tierOpen]);
 
-  const displayPrice = isInfinity ? INFINITY_TIERS[selectedTier].price : plan.price;
+  const tierData = INFINITY_TIERS[selectedTier];
+  const basePrice = isInfinity ? tierData.price : plan.price;
+  // Annual: 20% off for all paid plans including Infinity
+  const displayPrice = (isAnnual && basePrice && basePrice > 0)
+    ? Math.round(basePrice * 0.8)
+    : basePrice;
+  // Annual savings
+  const annualSavings = (isAnnual && basePrice && basePrice > 0)
+    ? Math.round(basePrice * 0.2 * 12)
+    : 0;
+  // Credits label: Infinity shows tier-specific count, others show plan default
+  const creditsLabel = isInfinity
+    ? `${tierData.display} orchestration credits / mo`
+    : plan.monthlyCredits;
 
   return (
     <motion.div
@@ -221,7 +313,7 @@ function PlanCard({
       </div>
 
       {/* Price */}
-      <div className="mb-4">
+      <div className="mb-3">
         {plan.price === 0 ? (
           <p className="text-[28px] font-semibold tracking-tight text-foreground">Free</p>
         ) : (
@@ -232,9 +324,22 @@ function PlanCard({
             <span className="text-[28px] font-semibold tracking-tight text-foreground">
               ${displayPrice}
             </span>
-            <span className="text-[12px] text-muted-foreground">/mo</span>
+            <span className="text-[12px] text-muted-foreground">
+              {isAnnual && basePrice && basePrice > 0 ? "/mo, billed annually" : "/mo"}
+            </span>
           </div>
         )}
+        {isAnnual && annualSavings > 0 && basePrice != null && (
+          <p className="mt-0.5 text-[11px] text-positive">
+            ${Math.round(basePrice * 0.8 * 12)}/yr · save ${annualSavings}
+          </p>
+        )}
+      </div>
+
+      {/* Credits badge — dynamic for Infinity */}
+      <div className="mb-4 inline-flex items-center gap-1.5 rounded-lg bg-accent/8 px-2.5 py-1">
+        <Zap className="size-3 text-accent" strokeWidth={2} />
+        <span className="text-[11.5px] font-semibold text-accent">{creditsLabel}</span>
       </div>
 
       {/* Infinity tier selector */}
@@ -247,10 +352,20 @@ function PlanCard({
           >
             <div className="flex items-center gap-1.5">
               <Zap className="size-3.5 text-accent" strokeWidth={1.75} />
-              <span className="font-medium text-foreground">{INFINITY_TIERS[selectedTier].label}</span>
-              <span className="text-muted-foreground">— {INFINITY_TIERS[selectedTier].display} orchestration units</span>
+              <span className="font-medium text-foreground">{tierData.label}</span>
+              <span className="text-muted-foreground">{tierData.display} credits</span>
+              {tierData.hasDiscount && (
+                <span className="rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-medium text-emerald-600/80">
+                  5% off
+                </span>
+              )}
             </div>
-            <ChevronDown className={cn("size-3.5 text-muted-foreground transition-transform", tierOpen && "rotate-180")} strokeWidth={1.75} />
+            <div className="flex items-center gap-2">
+              <span className="tabular-nums text-[12px] font-semibold text-foreground">
+                ${displayPrice}/mo
+              </span>
+              <ChevronDown className={cn("size-3.5 text-muted-foreground transition-transform", tierOpen && "rotate-180")} strokeWidth={1.75} />
+            </div>
           </button>
           <AnimatePresence>
             {tierOpen && (
@@ -259,29 +374,40 @@ function PlanCard({
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -4 }}
                 transition={{ duration: 0.12 }}
-                className="absolute left-0 right-0 top-full z-20 mt-1 max-h-52 overflow-y-auto rounded-xl bg-background shadow-lg ring-1 ring-border"
+                className="absolute left-0 right-0 top-full z-20 mt-1 max-h-64 overflow-y-auto rounded-xl bg-background shadow-lg ring-1 ring-border"
               >
-                {INFINITY_TIERS.map((t, i) => (
-                  <button
-                    key={t.label}
-                    type="button"
-                    onClick={() => { setSelectedTier(i); setTierOpen(false); }}
-                    className={cn(
-                      "flex w-full items-center justify-between px-3 py-2 text-left text-[12px] transition hover:bg-surface",
-                      selectedTier === i && "bg-surface",
-                    )}
-                  >
-                    <span className="font-medium text-foreground">{t.label}</span>
-                    <div className="flex items-center gap-3 text-muted-foreground">
-                      <span>{t.display} units</span>
-                      <span className="font-semibold text-foreground">${t.price}/mo</span>
-                    </div>
-                  </button>
-                ))}
-                <div className="border-t border-border px-3 py-2.5">
+                {INFINITY_TIERS.map((t, i) => {
+                  const tPrice = isAnnual ? Math.round(t.price * 0.8) : t.price;
+                  return (
+                    <button
+                      key={t.label}
+                      type="button"
+                      onClick={() => { setSelectedTier(i); setTierOpen(false); }}
+                      className={cn(
+                        "flex w-full items-center justify-between px-3 py-2.5 text-left text-[12px] transition hover:bg-surface",
+                        selectedTier === i && "bg-surface",
+                      )}
+                    >
+                      <div>
+                        <p className="font-medium text-foreground">{t.label}</p>
+                        <p className="text-[10.5px] text-muted-foreground">{t.display} credits/mo</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-semibold tabular-nums text-foreground">${tPrice}/mo</p>
+                        {isAnnual && (
+                          <p className="text-[10px] text-positive">−20% annual</p>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+                <div className="border-t border-border px-3 py-2">
+                  <p className="text-[10.5px] text-muted-foreground/60">
+                    5% enterprise discount from Tier IV · $1 = 500 credits across all plans
+                  </p>
                   <a
                     href="mailto:dreamos86app@gmail.com?subject=Enterprise inquiry"
-                    className="flex items-center gap-1.5 text-[11.5px] text-accent hover:underline underline-offset-2"
+                    className="mt-1 flex items-center gap-1.5 text-[11.5px] text-accent hover:underline underline-offset-2"
                   >
                     <Mail className="size-3.5" strokeWidth={1.75} />
                     Need larger scale? Contact us
@@ -348,6 +474,7 @@ export function PricingView() {
   const router = useRouter();
   const { profile } = useAuthStore();
   const [comingSoonPlan, setComingSoonPlan] = React.useState<string | null>(null);
+  const [isAnnual, setIsAnnual] = React.useState(false);
 
   function handleSelect(planId: string) {
     if (planId === "free") {
@@ -373,13 +500,49 @@ export function PricingView() {
         className="mx-auto max-w-6xl space-y-10 pb-16"
       >
         {/* Header */}
-        <motion.div variants={variants.fadeUp} className="text-center">
+        <motion.div variants={variants.fadeUp} className="text-center space-y-4">
           <h1 className="text-[28px] font-semibold tracking-[-0.04em] text-foreground">
             Choose your plan
           </h1>
-          <p className="mt-2 text-[14px] text-muted-foreground">
+          <p className="text-[14px] text-muted-foreground">
             Credits scale dynamically with your usage. No hidden fees. Cancel anytime.
           </p>
+
+          {/* Annual / Monthly toggle */}
+          <div className="inline-flex items-center gap-3 rounded-full bg-surface px-2 py-1.5 ring-1 ring-border">
+            <button
+              type="button"
+              onClick={() => setIsAnnual(false)}
+              className={cn(
+                "rounded-full px-4 py-1.5 text-[12.5px] font-medium transition",
+                !isAnnual
+                  ? "bg-background text-foreground shadow-[var(--shadow-xs)] ring-1 ring-border"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              Monthly
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsAnnual(true)}
+              className={cn(
+                "flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[12.5px] font-medium transition",
+                isAnnual
+                  ? "bg-background text-foreground shadow-[var(--shadow-xs)] ring-1 ring-border"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              Annual
+              <span className="rounded-full bg-positive/15 px-1.5 py-0.5 text-[10px] font-semibold text-positive">
+                Save 20%
+              </span>
+            </button>
+          </div>
+          {isAnnual && (
+            <p className="text-[12px] text-positive">
+              Billed annually — 2 months free
+            </p>
+          )}
         </motion.div>
 
         {/* 4 plan cards in one row */}
@@ -390,6 +553,7 @@ export function PricingView() {
               plan={plan}
               onSelect={handleSelect}
               currentPlanId={profile?.plan_id}
+              isAnnual={isAnnual}
             />
           ))}
         </div>

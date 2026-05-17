@@ -46,10 +46,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       if (profile) {
         setProfile(profile);
-        useCreditsStore.getState().setCredits(
-          profile.credits_remaining,
-          profile.credits_reset_at,
-        );
+        // Set credits from profile immediately so we never flash 0.
+        // `setCredits` marks the store as `isConfirmed = true`, preventing
+        // false "out of credits" blocks during initial hydration.
+        const creditsValue = typeof profile.credits_remaining === "number"
+          ? profile.credits_remaining
+          : null;
+        if (creditsValue !== null) {
+          useCreditsStore.getState().setCredits(
+            creditsValue,
+            profile.credits_reset_at ?? null,
+          );
+        }
       }
 
       const { data: notifications } = await supabase
@@ -113,16 +121,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     let disposeRealtime: (() => void) | undefined;
 
-    void supabase.auth.getSession().then(({ data: { session } }) => {
+    void supabase.auth.getSession().then(async ({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
-      setLoading(false);
 
       if (session?.user) {
-        void bootstrapUser(session.user.id).then((dispose) => {
-          disposeRealtime = dispose;
-        });
+        // Bootstrap profile + credits BEFORE clearing the loading state so the
+        // UI never flashes a "logged out" or "0 credits" state on a refresh.
+        const dispose = await bootstrapUser(session.user.id);
+        disposeRealtime = dispose;
       }
+
+      setLoading(false);
     });
 
     const {
@@ -140,6 +150,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (event === "SIGNED_OUT") {
         disposeRealtime?.();
         disposeRealtime = undefined;
+        // Clear ALL persisted state immediately
+        try {
+          const keys = Object.keys(localStorage).filter(
+            (k) => k.startsWith("sb-") || k.startsWith("dreamos-") || k === "supabase.auth.token",
+          );
+          keys.forEach((k) => localStorage.removeItem(k));
+          sessionStorage.clear();
+        } catch { /* ignore in SSR */ }
         resetAuth();
         resetCredits();
         resetNotifications();

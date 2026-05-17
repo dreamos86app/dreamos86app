@@ -13,8 +13,6 @@ import {
   Loader2,
   RotateCcw,
   AlertCircle,
-  ArrowLeft,
-  ChevronRight,
   Sparkles,
   Zap,
 } from "lucide-react";
@@ -45,6 +43,7 @@ import { PreviewPanel } from "@/components/create/workspace/preview-panel";
 import { AgentPhases } from "@/components/create/workspace/agent-phases";
 import { BuildTimeline } from "@/components/create/workspace/build-timeline";
 import { OrchestrationNarrator } from "@/components/create/workspace/orchestration-narrator";
+import { WorkspaceLauncher } from "@/components/create/workspace/workspace-launcher";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -119,50 +118,7 @@ function MessageBubble({
   );
 }
 
-// ─── Workspace header (minimal chrome) ────────────────────────────────────────
-
-function WorkspaceHeader({
-  projectName,
-  isBusy,
-}: {
-  projectName?: string | null;
-  isBusy: boolean;
-}) {
-  return (
-    <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border/50 bg-background/80 px-3 backdrop-blur-xl">
-      <Link
-        href="/"
-        className="flex items-center gap-1.5 text-[12px] font-medium text-muted-foreground transition hover:text-foreground"
-      >
-        <ArrowLeft className="size-3.5" strokeWidth={1.75} />
-        DreamOS86
-      </Link>
-
-      {projectName && (
-        <>
-          <ChevronRight className="size-3 text-muted-foreground/40" strokeWidth={1.75} />
-          <span className="text-[12px] font-medium text-foreground">
-            {projectName}
-          </span>
-        </>
-      )}
-
-      <div className="ml-auto flex items-center gap-2">
-        {isBusy && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="flex items-center gap-1.5"
-          >
-            <span className="size-1.5 animate-pulse rounded-full bg-accent" />
-            <span className="text-[11px] text-accent font-medium">Orchestrating</span>
-          </motion.div>
-        )}
-      </div>
-    </div>
-  );
-}
+// WorkspaceHeader is now the WorkspaceLauncher component — imported above.
 
 // ─── Mode style ───────────────────────────────────────────────────────────────
 
@@ -336,8 +292,8 @@ export function ImmersiveWorkspace({
 
   return (
     <DropZone onFiles={onFiles} disabled={isBusy} className="flex h-screen w-full flex-col overflow-hidden">
-      {/* Workspace header — minimal chrome */}
-      <WorkspaceHeader
+      {/* Workspace header — WorkspaceName / AppName breadcrumb */}
+      <WorkspaceLauncher
         projectName={project?.name}
         isBusy={isBusy}
       />

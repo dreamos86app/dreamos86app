@@ -61,10 +61,14 @@ const MODES: Array<{ id: CreationMode; label: string; desc: string; icon: React.
   { id: "build", label: "Build", desc: "Full system generation", icon: Zap, accent: "text-violet-500" },
 ];
 
-const COMMUNITY_HIGHLIGHTS = [
-  { name: "AI Finance Tracker", author: "Ryo Yamamoto", stars: 284, gradient: "from-emerald-400 to-cyan-500" },
-  { name: "Real-time Collab Board", author: "Aria Chen", stars: 197, gradient: "from-violet-400 to-purple-600" },
-  { name: "Crypto Portfolio Pro", author: "Marcus Klein", stars: 452, gradient: "from-amber-400 to-orange-500" },
+// Real app concepts — inspiration feed that rotates, no fake authors/stats
+const APP_INSPIRATIONS = [
+  { label: "AI contract analyzer", desc: "Upload PDFs, extract key clauses, flag risks automatically", gradient: "from-blue-500/15 to-indigo-500/15", icon: "📄", prompt: "Build an AI contract analyzer that extracts key clauses, flags risks, and summarizes legal documents." },
+  { label: "Realtime CRM", desc: "Pipeline, contacts, deal tracking, and AI follow-up drafts", gradient: "from-violet-500/15 to-purple-500/15", icon: "📊", prompt: "Build a realtime CRM with contact management, deal pipeline, activity tracking, and AI-powered follow-up email drafts." },
+  { label: "Restaurant inventory OS", desc: "Stock tracking, waste reduction, supplier ordering", gradient: "from-amber-500/15 to-orange-500/15", icon: "🍽️", prompt: "Build a restaurant inventory management system with stock tracking, waste reduction analytics, and automated supplier ordering." },
+  { label: "AI medical scheduler", desc: "Patient booking, reminders, and insurance checks", gradient: "from-emerald-500/15 to-teal-500/15", icon: "🏥", prompt: "Build an AI-powered medical appointment scheduler with patient booking, automated reminders, and insurance verification." },
+  { label: "SaaS metrics dashboard", desc: "MRR, churn, CAC, LTV all in one view", gradient: "from-cyan-500/15 to-blue-500/15", icon: "📈", prompt: "Build a SaaS metrics dashboard tracking MRR, churn, CAC, LTV, and revenue forecasting with real-time charts." },
+  { label: "Code review platform", desc: "PR reviews with AI comments and quality scoring", gradient: "from-rose-500/15 to-pink-500/15", icon: "🔍", prompt: "Build a code review platform with AI-generated review comments, quality scoring, and integration with GitHub PRs." },
 ];
 
 const STATUS_DOT: Record<string, string> = {
@@ -211,20 +215,40 @@ function RecentApps({ projects }: { projects: RecentProject[] }) {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.05, duration: 0.2 }}
           >
-            <Link
-              href={`/projects/${p.id}`}
-              className="group flex min-w-[200px] items-center gap-3 rounded-xl bg-surface p-3 ring-1 ring-border transition hover:ring-accent/30 hover:shadow-sm"
-            >
-              <div className={cn("size-9 shrink-0 rounded-xl bg-gradient-to-br", p.gradient)} />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-[13px] font-semibold text-foreground">{p.name}</p>
-                <div className="flex items-center gap-1.5 mt-0.5">
-                  <span className={cn("size-1.5 rounded-full", STATUS_DOT[p.status] ?? "bg-muted-foreground/40")} />
-                  <span className="text-[11px] capitalize text-muted-foreground">{p.status}</span>
+            <div className="group flex min-w-[220px] flex-col gap-2 rounded-xl bg-surface p-3 ring-1 ring-border transition hover:ring-accent/30 hover:shadow-sm">
+              <div className="flex items-center gap-2.5">
+                <div className={cn("size-8 shrink-0 rounded-lg bg-gradient-to-br", p.gradient)} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[13px] font-semibold text-foreground">{p.name}</p>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className={cn("size-1.5 rounded-full", STATUS_DOT[p.status] ?? "bg-muted-foreground/40")} />
+                    <span className="text-[11px] capitalize text-muted-foreground">{p.status}</span>
+                  </div>
                 </div>
               </div>
-              <ArrowRight className="size-3.5 shrink-0 text-muted-foreground/30 transition group-hover:text-accent/60" strokeWidth={2} />
-            </Link>
+              <div className="flex items-center justify-between">
+                <span className="text-[10.5px] text-muted-foreground/60">
+                  {(() => {
+                    const d = new Date(p.updated_at);
+                    const diff = Date.now() - d.getTime();
+                    const mins = Math.floor(diff / 60000);
+                    if (mins < 1) return "just now";
+                    if (mins < 60) return `${mins}m ago`;
+                    const hrs = Math.floor(mins / 60);
+                    if (hrs < 24) return `${hrs}h ago`;
+                    const days = Math.floor(hrs / 24);
+                    if (days < 7) return `${days}d ago`;
+                    return d.toLocaleDateString();
+                  })()}
+                </span>
+                <Link
+                  href={`/projects/${p.id}`}
+                  className="flex items-center gap-1 rounded-md bg-accent/10 px-2 py-0.5 text-[10.5px] font-semibold text-accent transition hover:bg-accent hover:text-white"
+                >
+                  Open <ArrowRight className="size-2.5" strokeWidth={2.5} />
+                </Link>
+              </div>
+            </div>
           </motion.div>
         ))}
 
@@ -285,41 +309,45 @@ function TemplateGrid() {
   );
 }
 
-// ─── Community highlights ─────────────────────────────────────────────────────
+// ─── App inspiration feed ─────────────────────────────────────────────────────
 
-function CommunityHighlights() {
+function AppInspirationFeed() {
+  const router = useRouter();
+
   return (
     <section className="w-full max-w-5xl">
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Globe className="size-3.5 text-muted-foreground/60" strokeWidth={1.75} />
+          <TrendingUp className="size-3.5 text-muted-foreground/60" strokeWidth={1.75} />
           <span className="text-[11.5px] font-semibold uppercase tracking-wider text-muted-foreground/60">
-            From the community
+            App ideas — build one now
           </span>
         </div>
-        <Link href="/community" className="flex items-center gap-1 text-[11.5px] text-accent transition hover:underline">
-          Explore <ArrowRight className="size-3" strokeWidth={2} />
+        <Link href="/explore" className="flex items-center gap-1 text-[11.5px] text-accent transition hover:underline">
+          Explore more <ArrowRight className="size-3" strokeWidth={2} />
         </Link>
       </div>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        {COMMUNITY_HIGHLIGHTS.map((app, i) => (
-          <motion.div
-            key={app.name}
+      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+        {APP_INSPIRATIONS.map((app, i) => (
+          <motion.button
+            key={app.label}
+            type="button"
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 + i * 0.06 }}
-            className="group cursor-pointer rounded-xl bg-surface ring-1 ring-border transition hover:ring-accent/30 hover:shadow-sm overflow-hidden"
+            transition={{ delay: 0.15 + i * 0.04 }}
+            onClick={() => router.push(`/create?prompt=${encodeURIComponent(app.prompt)}`)}
+            className={cn(
+              "group flex items-start gap-3 rounded-xl p-3.5 ring-1 ring-border text-left transition hover:ring-accent/30 hover:shadow-sm bg-gradient-to-br",
+              app.gradient,
+            )}
           >
-            <div className={cn("h-20 w-full bg-gradient-to-br opacity-80", app.gradient)} />
-            <div className="p-3">
-              <p className="text-[13px] font-semibold text-foreground">{app.name}</p>
-              <p className="mt-0.5 text-[11px] text-muted-foreground">by {app.author}</p>
-              <div className="mt-2 flex items-center gap-1 text-[11px] text-muted-foreground">
-                <span>⭐</span>
-                <span>{app.stars}</span>
-              </div>
+            <span className="mt-0.5 text-2xl leading-none shrink-0">{app.icon}</span>
+            <div className="min-w-0 flex-1">
+              <p className="text-[13px] font-semibold text-foreground">{app.label}</p>
+              <p className="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground line-clamp-2">{app.desc}</p>
             </div>
-          </motion.div>
+            <ArrowRight className="size-3.5 shrink-0 mt-1 text-foreground/20 transition group-hover:text-accent/60" strokeWidth={2} />
+          </motion.button>
         ))}
       </div>
     </section>
@@ -359,7 +387,7 @@ export function OsHome({ recentProjects }: OsHomeProps) {
   const firstName = profile?.full_name?.split(" ")[0] ?? profile?.email?.split("@")[0] ?? null;
 
   return (
-    <div className="relative min-h-[calc(100vh-3.5rem)] overflow-y-auto">
+    <div className="relative flex-1 overflow-y-auto">
       <AmbientOrbs />
 
       <div className="relative z-10 mx-auto flex max-w-5xl flex-col items-center gap-10 px-4 pb-20 pt-12 sm:px-6">
@@ -392,19 +420,39 @@ export function OsHome({ recentProjects }: OsHomeProps) {
           <QuickCreateBar />
         </motion.div>
 
-        {/* Recent apps */}
-        <AnimatePresence>
-          {recentProjects.length > 0 && (
+        {/* Recent apps — or first-run empty state */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.1 }}
+          className="w-full"
+        >
+          {recentProjects.length > 0 ? (
+            <RecentApps projects={recentProjects} />
+          ) : (
             <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.1 }}
-              className="w-full"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.12 }}
+              className="flex flex-col items-center gap-3 rounded-2xl bg-surface/50 px-8 py-10 text-center ring-1 ring-border/60"
             >
-              <RecentApps projects={recentProjects} />
+              <div className="flex size-12 items-center justify-center rounded-2xl bg-accent/10 ring-1 ring-accent/20">
+                <Zap className="size-5 text-accent" strokeWidth={1.75} />
+              </div>
+              <div>
+                <p className="text-[15px] font-semibold text-foreground">Build your first AI-native application</p>
+                <p className="mt-1 text-[13px] text-muted-foreground">Describe what you want to create — DreamOS86 architects, builds, and deploys it.</p>
+              </div>
+              <Link
+                href="/create"
+                className="mt-1 inline-flex items-center gap-1.5 rounded-xl bg-accent px-4 py-2 text-[13px] font-semibold text-white transition hover:bg-accent/90"
+              >
+                <Zap className="size-3.5" strokeWidth={2} />
+                Start building
+              </Link>
             </motion.div>
           )}
-        </AnimatePresence>
+        </motion.div>
 
         {/* Templates */}
         <motion.div
@@ -416,14 +464,14 @@ export function OsHome({ recentProjects }: OsHomeProps) {
           <TemplateGrid />
         </motion.div>
 
-        {/* Community */}
+        {/* App inspiration feed */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.2 }}
           className="w-full"
         >
-          <CommunityHighlights />
+          <AppInspirationFeed />
         </motion.div>
 
         {/* Platform quick links */}

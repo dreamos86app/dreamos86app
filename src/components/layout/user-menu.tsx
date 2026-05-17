@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   User, Settings, CreditCard, Bell, HelpCircle,
   LogOut, Moon, Sun, Gift, ChevronRight, Loader2, Zap, ArrowUpRight,
-  CalendarClock,
+  CalendarClock, Copy, Check,
 } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { useAuthStore } from "@/lib/stores/auth-store";
@@ -15,6 +15,8 @@ import { useTheme } from "next-themes";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { useHydrated } from "@/lib/hooks/use-hydrated";
+import { getAppUrl } from "@/lib/app-url";
+import { LogoutConfirmModal } from "@/components/auth/logout-confirm-modal";
 
 // ─── Menu item types ──────────────────────────────────────────────────────────
 
@@ -109,10 +111,12 @@ function DarkModeToggle({ onClose: _onClose }: { onClose: () => void }) {
 
 export function UserMenu() {
   const { profile, reset: resetAuth } = useAuthStore();
+  const [copied, setCopied] = React.useState(false);
   const { remaining, resetAt, reset: resetCredits } = useCreditsStore();
   const hydrated = useHydrated();
   const [open, setOpen] = React.useState(false);
   const [loggingOut, setLoggingOut] = React.useState(false);
+  const [showLogoutModal, setShowLogoutModal] = React.useState(false);
   const menuRef = React.useRef<HTMLDivElement>(null);
 
   // Until hydration completes, render a deterministic empty profile state.
@@ -152,27 +156,9 @@ export function UserMenu() {
     return () => document.removeEventListener("keydown", handler);
   }, [open]);
 
-  async function handleLogout() {
-    setLoggingOut(true);
-    try {
-      const supabase = createClient();
-      // Global scope signs out all browser tabs and server-side sessions
-      await supabase.auth.signOut({ scope: "global" });
-    } catch {
-      // Best-effort — always proceed to clear local state
-    } finally {
-      // Clear persisted Zustand auth state from localStorage
-      try { localStorage.removeItem("dreamos-auth"); } catch { /* ignore */ }
-
-      // Reset all stores synchronously before navigation
-      resetAuth();
-      resetCredits?.();
-
-      // Hard navigation clears all React state and server-renders the login page
-      // with no lingering session. `window.location.replace` prevents the user
-      // from navigating "back" into the authenticated app.
-      window.location.replace("/auth/login");
-    }
+  function handleLogout() {
+    setOpen(false);
+    setShowLogoutModal(true);
   }
 
   const menuItems: (MenuItem | "separator")[] = [
@@ -181,7 +167,7 @@ export function UserMenu() {
     "separator",
     { id: "billing", label: "Billing", icon: CreditCard, href: "/settings/billing" },
     { id: "notifications", label: "Notifications", icon: Bell, href: "/settings/notifications" },
-    { id: "referral", label: "Referral Program", icon: Gift, href: "/settings/account", badge: "Soon" },
+    { id: "referral", label: "Referral Program", icon: Gift, href: "/referrals" },
     "separator",
     { id: "help", label: "Help Center", icon: HelpCircle, href: "/help" },
     "separator",
@@ -279,6 +265,37 @@ export function UserMenu() {
               )}
             </div>
 
+            {/* Referral code */}
+            {safeProfile?.referral_code && (
+              <div className="border-b border-border px-4 py-2.5">
+                <p className="text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">
+                  Your referral code
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const link = `${getAppUrl()}/auth/sign-up?ref=${safeProfile.referral_code}`;
+                    navigator.clipboard.writeText(link).then(() => {
+                      setCopied(true);
+                      setTimeout(() => setCopied(false), 2000);
+                    });
+                  }}
+                  className="flex w-full items-center justify-between gap-2 rounded-lg bg-muted/50 px-3 py-2 ring-1 ring-border transition hover:ring-accent/30"
+                >
+                  <span className="font-mono text-[12px] font-semibold tracking-wider text-foreground">
+                    {safeProfile.referral_code}
+                  </span>
+                  {copied
+                    ? <Check className="size-3.5 text-positive" strokeWidth={2.5} />
+                    : <Copy className="size-3.5 text-muted-foreground" strokeWidth={1.75} />
+                  }
+                </button>
+                {copied && (
+                  <p className="mt-1 text-[10.5px] text-positive">Referral link copied!</p>
+                )}
+              </div>
+            )}
+
             {/* Menu items */}
             <div className="p-1.5">
               {menuItems.map((item, i) => {
@@ -310,6 +327,11 @@ export function UserMenu() {
           </motion.div>
         )}
       </AnimatePresence>
+      {/* Logout confirmation modal */}
+      <LogoutConfirmModal
+        open={showLogoutModal}
+        onClose={() => setShowLogoutModal(false)}
+      />
     </div>
   );
 }

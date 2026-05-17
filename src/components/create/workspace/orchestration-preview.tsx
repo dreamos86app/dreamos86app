@@ -75,15 +75,15 @@ export function OrchestrationPreview({
             repeat: Infinity,
             ease: "easeInOut",
           }}
-          className="relative flex size-24 items-center justify-center rounded-3xl bg-gradient-to-br from-[#1e6bff] via-[#3a82ff] to-[#7eb7ff] p-[1.5px] shadow-[0_30px_80px_-20px_rgba(30,107,255,0.55)]"
+          className="relative flex size-24 items-center justify-center rounded-3xl"
         >
-          <div className="flex size-full items-center justify-center rounded-[calc(1.5rem-1.5px)] bg-background/40 backdrop-blur-xl">
+          <div className="flex size-full items-center justify-center">
             <Image
               src="/logo.png"
               alt="DreamOS86"
-              width={64}
-              height={64}
-              className="drop-shadow-[0_8px_24px_rgba(30,107,255,0.55)]"
+              width={80}
+              height={80}
+              className="object-contain"
               priority
             />
           </div>

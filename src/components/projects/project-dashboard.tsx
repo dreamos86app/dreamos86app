@@ -81,14 +81,20 @@ interface MemoryRow {
   updated_at: string;
 }
 
-type Tab = "overview" | "architecture" | "deployments" | "analytics" | "environment" | "media" | "memory" | "settings";
+type Tab = "overview" | "architecture" | "deployments" | "analytics" | "environment" | "media" | "memory" | "settings" | "users" | "domains" | "security" | "logs" | "billing" | "integrations";
 
 const TABS: Array<{ id: Tab; label: string; icon: React.ElementType }> = [
   { id: "overview", label: "Overview", icon: Activity },
   { id: "architecture", label: "Architecture", icon: GitBranch },
   { id: "deployments", label: "Deployments", icon: Globe },
   { id: "analytics", label: "Analytics", icon: BarChart3 },
+  { id: "users", label: "Users", icon: Users },
+  { id: "domains", label: "Domains", icon: Globe },
+  { id: "security", label: "Security", icon: Server },
   { id: "environment", label: "Environment", icon: KeyRound },
+  { id: "logs", label: "Logs", icon: Terminal },
+  { id: "billing", label: "Billing", icon: Zap },
+  { id: "integrations", label: "Integrations", icon: TrendingUp },
   { id: "media", label: "Media", icon: ImageIcon },
   { id: "memory", label: "Memory", icon: Brain },
   { id: "settings", label: "Settings", icon: SettingsIcon },
@@ -636,6 +642,309 @@ function MediaTab({ projectId }: { projectId: string }) {
   );
 }
 
+// ─── Users tab ───────────────────────────────────────────────────────────────
+
+function UsersTab({ project }: { project: ProjectRow }) {
+  const [inviteEmail, setInviteEmail] = React.useState("");
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-[13.5px] font-semibold text-foreground">App users</h3>
+          <p className="text-[12px] text-muted-foreground">People with access to this application</p>
+        </div>
+        <button
+          type="button"
+          className="flex items-center gap-1.5 rounded-xl bg-accent px-3 py-1.5 text-[12.5px] font-semibold text-white transition hover:bg-accent/90"
+        >
+          <Plus className="size-3.5" strokeWidth={2} />
+          Invite
+        </button>
+      </div>
+
+      {project.is_public ? (
+        <div className="rounded-[var(--radius-xl)] bg-background p-5 ring-1 ring-border">
+          <div className="flex items-center gap-3">
+            <div className="flex size-10 items-center justify-center rounded-xl bg-emerald-500/10">
+              <Users className="size-5 text-emerald-600" strokeWidth={1.5} />
+            </div>
+            <div>
+              <p className="text-[13px] font-semibold text-foreground">Public application</p>
+              <p className="text-[12px] text-muted-foreground">Anyone can access this app. Enable authentication to track users.</p>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-[var(--radius-xl)] bg-background p-8 text-center ring-1 ring-border">
+          <div className="flex justify-center">
+            <div className="flex size-12 items-center justify-center rounded-2xl bg-accent/10 ring-1 ring-accent/20">
+              <Users className="size-6 text-accent/70" strokeWidth={1.5} />
+            </div>
+          </div>
+          <h3 className="mt-4 text-[14px] font-semibold text-foreground">No users yet</h3>
+          <p className="mx-auto mt-2 max-w-sm text-[12.5px] leading-relaxed text-muted-foreground">
+            Once your app has authentication configured, users who sign up will appear here.
+          </p>
+          <div className="mt-4 flex items-center gap-2 mx-auto w-fit rounded-xl border border-border bg-surface px-3 py-2">
+            <input
+              type="email"
+              value={inviteEmail}
+              onChange={(e) => setInviteEmail(e.target.value)}
+              placeholder="Invite collaborator by email…"
+              className="w-52 bg-transparent text-[12.5px] focus:outline-none text-foreground placeholder:text-muted-foreground/50"
+            />
+            <button
+              type="button"
+              disabled={!inviteEmail.includes("@")}
+              className="rounded-lg bg-accent px-2.5 py-1 text-[11.5px] font-semibold text-white transition disabled:opacity-40 hover:bg-accent/90"
+            >
+              Invite
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Domains tab ─────────────────────────────────────────────────────────────
+
+function DomainsTab({ project }: { project: ProjectRow }) {
+  const [domainInput, setDomainInput] = React.useState("");
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-[13.5px] font-semibold text-foreground">Custom domains</h3>
+          <p className="text-[12px] text-muted-foreground">Connect your own domain to this app</p>
+        </div>
+      </div>
+
+      {project.custom_domain ? (
+        <div className="rounded-[var(--radius-xl)] bg-background p-4 ring-1 ring-border">
+          <div className="flex items-center gap-3">
+            <div className="flex size-9 items-center justify-center rounded-lg bg-emerald-500/10">
+              <Globe className="size-4.5 text-emerald-600" strokeWidth={1.75} />
+            </div>
+            <div className="flex-1">
+              <p className="text-[13px] font-semibold text-foreground">{project.custom_domain}</p>
+              <p className="text-[11.5px] text-emerald-600">Active · SSL verified</p>
+            </div>
+            <a href={`https://${project.custom_domain}`} target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-1 text-[12px] text-muted-foreground transition hover:text-foreground">
+              <ExternalLink className="size-3.5" strokeWidth={1.75} />
+            </a>
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-[var(--radius-xl)] bg-background p-6 ring-1 ring-border">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="flex size-10 items-center justify-center rounded-xl bg-accent/10">
+              <Globe className="size-5 text-accent/70" strokeWidth={1.5} />
+            </div>
+            <div>
+              <p className="text-[13px] font-semibold text-foreground">No custom domain</p>
+              <p className="text-[12px] text-muted-foreground">Your app is live on a DreamOS86 subdomain</p>
+            </div>
+          </div>
+          {project.preview_url && (
+            <div className="mb-4 flex items-center gap-2 rounded-lg bg-surface px-3 py-2 ring-1 ring-border text-[12.5px]">
+              <Globe className="size-3.5 text-muted-foreground/60 shrink-0" strokeWidth={1.75} />
+              <span className="truncate text-muted-foreground">{project.preview_url}</span>
+              <a href={project.preview_url} target="_blank" rel="noopener noreferrer"
+                className="ml-auto shrink-0 text-accent transition hover:text-accent/70">
+                <ExternalLink className="size-3.5" strokeWidth={1.75} />
+              </a>
+            </div>
+          )}
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={domainInput}
+              onChange={(e) => setDomainInput(e.target.value)}
+              placeholder="yourdomain.com"
+              className="flex-1 rounded-xl bg-surface px-3 py-2 text-[12.5px] ring-1 ring-border focus:outline-none focus:ring-accent/40 text-foreground placeholder:text-muted-foreground/50"
+            />
+            <button
+              type="button"
+              disabled={!domainInput.includes(".")}
+              className="rounded-xl bg-accent px-3 py-2 text-[12.5px] font-semibold text-white transition disabled:opacity-40 hover:bg-accent/90"
+            >
+              Connect
+            </button>
+          </div>
+          <p className="mt-2 text-[11px] text-muted-foreground/60">
+            Add a CNAME record pointing to <code className="text-accent">cname.dreamos86.com</code>
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Security tab ─────────────────────────────────────────────────────────────
+
+function SecurityTab({ project }: { project: ProjectRow }) {
+  return (
+    <div className="space-y-4">
+      <div>
+        <h3 className="text-[13.5px] font-semibold text-foreground">Security settings</h3>
+        <p className="text-[12px] text-muted-foreground">Access control, authentication, and security policies</p>
+      </div>
+
+      {[
+        { title: "Authentication", desc: "Configure sign-in methods, session length, and MFA", status: "Not configured", color: "text-muted-foreground" },
+        { title: "Rate limiting", desc: "Protect API endpoints from abuse with per-IP rate limits", status: "Default (100 req/min)", color: "text-emerald-600" },
+        { title: "CORS policy", desc: "Control which origins can access your API", status: project.is_public ? "Open (public)" : "Same-origin only", color: project.is_public ? "text-amber-600" : "text-emerald-600" },
+        { title: "HTTPS enforcement", desc: "Redirect all HTTP traffic to HTTPS", status: "Enabled", color: "text-emerald-600" },
+        { title: "Environment isolation", desc: "Production, staging, and preview run in separate environments", status: "Active", color: "text-emerald-600" },
+      ].map(({ title, desc, status, color }) => (
+        <div key={title} className="flex items-start justify-between rounded-[var(--radius-xl)] bg-background p-4 ring-1 ring-border">
+          <div className="flex-1">
+            <p className="text-[13px] font-semibold text-foreground">{title}</p>
+            <p className="mt-0.5 text-[12px] text-muted-foreground">{desc}</p>
+          </div>
+          <span className={cn("shrink-0 text-[11.5px] font-medium", color)}>{status}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Logs tab ─────────────────────────────────────────────────────────────────
+
+function LogsTab({ project }: { project: ProjectRow }) {
+  const isLive = project.status === "live";
+
+  if (!isLive) {
+    return (
+      <div className="rounded-[var(--radius-xl)] bg-background p-8 text-center ring-1 ring-border">
+        <div className="flex justify-center">
+          <div className="flex size-12 items-center justify-center rounded-2xl bg-accent/10 ring-1 ring-accent/20">
+            <Terminal className="size-6 text-accent/70" strokeWidth={1.5} />
+          </div>
+        </div>
+        <h3 className="mt-4 text-[14px] font-semibold text-foreground">No logs yet</h3>
+        <p className="mx-auto mt-2 max-w-sm text-[12.5px] leading-relaxed text-muted-foreground">
+          Deploy your app to start collecting runtime logs, errors, and API request traces.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-[13px] font-semibold text-foreground">Runtime logs</p>
+        <span className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground">
+          <span className="size-1.5 animate-pulse rounded-full bg-emerald-400" />
+          Live
+        </span>
+      </div>
+      <div className="rounded-[var(--radius-xl)] bg-[#080c12] p-4 ring-1 ring-border font-mono">
+        <p className="text-[11.5px] text-emerald-400/70">
+          {new Date().toISOString()} — App initialized · waiting for requests
+        </p>
+        <p className="mt-1 text-[11.5px] text-muted-foreground/50">
+          Logs will appear here as your app receives traffic.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ─── Billing tab ─────────────────────────────────────────────────────────────
+
+function BillingTab({ project }: { project: ProjectRow }) {
+  return (
+    <div className="space-y-4">
+      <div>
+        <h3 className="text-[13.5px] font-semibold text-foreground">App billing & usage</h3>
+        <p className="text-[12px] text-muted-foreground">Credits consumed building and running this application</p>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        {[
+          { label: "Credits used (total)", value: "—", hint: "Since creation" },
+          { label: "Last generation", value: "—", hint: "Last build event" },
+          { label: "Avg. per session", value: "—", hint: "Rolling average" },
+        ].map(({ label, value, hint }) => (
+          <div key={label} className="rounded-[var(--radius-xl)] bg-background p-4 ring-1 ring-border">
+            <p className="text-[11.5px] text-muted-foreground">{label}</p>
+            <p className="mt-1 text-[22px] font-semibold text-foreground">{value}</p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground/60">{hint}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="rounded-[var(--radius-xl)] bg-background p-5 ring-1 ring-border">
+        <p className="text-[13px] font-semibold text-foreground mb-2">Credit history</p>
+        <p className="text-[12.5px] text-muted-foreground">
+          No generation events recorded for this app yet.
+          Each orchestration run will appear here with a timestamp and credit cost.
+        </p>
+        <Link
+          href="/credits"
+          className="mt-3 inline-flex items-center gap-1.5 text-[12.5px] text-accent transition hover:underline"
+        >
+          View account credits <ExternalLink className="size-3" strokeWidth={2} />
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+// ─── Integrations tab ────────────────────────────────────────────────────────
+
+const INTEGRATIONS = [
+  { name: "Supabase", desc: "Database, Auth, Storage, and Realtime", icon: "⚡", connected: false },
+  { name: "Stripe", desc: "Payment processing, subscriptions, and billing", icon: "💳", connected: false },
+  { name: "Resend", desc: "Transactional email delivery", icon: "📧", connected: false },
+  { name: "Cloudinary", desc: "Image and video optimization CDN", icon: "🖼️", connected: false },
+  { name: "OpenAI", desc: "Embed AI completions and assistants", icon: "🤖", connected: false },
+  { name: "Slack", desc: "Notifications, alerts, and workflow triggers", icon: "💬", connected: false },
+  { name: "GitHub", desc: "Source control, CI/CD, and deployments", icon: "🐱", connected: false },
+  { name: "Twilio", desc: "SMS, voice, and WhatsApp messaging", icon: "📱", connected: false },
+];
+
+function IntegrationsTab() {
+  return (
+    <div className="space-y-4">
+      <div>
+        <h3 className="text-[13.5px] font-semibold text-foreground">Integrations</h3>
+        <p className="text-[12px] text-muted-foreground">Connect third-party services to extend your app</p>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        {INTEGRATIONS.map(({ name, desc, icon, connected }) => (
+          <div key={name} className="flex items-center gap-3 rounded-[var(--radius-xl)] bg-background p-4 ring-1 ring-border transition hover:ring-accent/20">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-surface text-lg">
+              {icon}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-[13px] font-semibold text-foreground">{name}</p>
+              <p className="text-[11.5px] text-muted-foreground">{desc}</p>
+            </div>
+            <button
+              type="button"
+              className={cn(
+                "shrink-0 rounded-lg px-2.5 py-1 text-[11.5px] font-semibold transition",
+                connected
+                  ? "bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20"
+                  : "bg-surface text-muted-foreground ring-1 ring-border hover:bg-accent/10 hover:text-accent hover:ring-accent/20",
+              )}
+            >
+              {connected ? "Connected" : "Connect"}
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── Analytics tab ───────────────────────────────────────────────────────────
 
 function AnalyticsTab({ project }: { project: ProjectRow }) {
@@ -1073,37 +1382,135 @@ export function ProjectDashboard({
   memory,
 }: ProjectDashboardProps) {
   const [tab, setTab] = React.useState<Tab>("overview");
+  const [publishState, setPublishState] = React.useState<"idle" | "publishing" | "published" | "failed">("idle");
   const project = initialProject;
+
+  const lastDeployment = deployments.find((d) => d.status === "deployed");
+  const hasUnpublishedChanges = publishState === "idle" && (
+    !lastDeployment || new Date(project.updated_at) > new Date(lastDeployment.created_at)
+  );
+
+  async function handlePublish() {
+    setPublishState("publishing");
+    // Simulate publish pipeline (real implementation would call /api/deploy)
+    await new Promise((r) => setTimeout(r, 2200));
+    setPublishState("published");
+    setTimeout(() => setPublishState("idle"), 5000);
+  }
 
   return (
     <div className="px-4 py-6 sm:px-8 sm:py-8">
       {/* Header */}
-      <div className="mb-5 flex items-start justify-between gap-3">
-        <div className="min-w-0">
+      <div className="mb-5 flex items-start gap-3">
+        <div className="min-w-0 flex-1">
           <Link
             href="/projects"
             className="text-[11.5px] font-medium text-muted-foreground transition hover:text-foreground"
           >
             ← Apps
           </Link>
-          <h1 className="mt-1 truncate text-[26px] font-semibold tracking-[-0.04em] text-foreground">
-            {project.name}
-          </h1>
-          <p className="mt-0.5 text-[12.5px] text-muted-foreground">
-            {project.description || "No description yet"}
-          </p>
+
+          <div className="mt-1 flex items-center gap-2.5 flex-wrap">
+            {/* App gradient icon */}
+            <div className={cn("size-9 shrink-0 rounded-xl bg-gradient-to-br", project.gradient)} />
+
+            <div className="min-w-0">
+              <h1 className="truncate text-[22px] font-semibold tracking-[-0.04em] text-foreground">
+                {project.name}
+              </h1>
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className={cn(
+                  "rounded-full px-2 py-0.5 text-[10.5px] font-semibold",
+                  STATUS_PILL[project.status].bg,
+                  STATUS_PILL[project.status].text,
+                )}>
+                  {STATUS_PILL[project.status].label}
+                </span>
+                {lastDeployment && (
+                  <span className="text-[11px] text-muted-foreground/60">
+                    Last deployed {new Date(lastDeployment.created_at).toLocaleDateString()}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
-        <span className={cn(
-          "rounded-full px-2.5 py-1 text-[11px] font-semibold",
-          STATUS_PILL[project.status].bg,
-          STATUS_PILL[project.status].text,
-        )}>
-          {STATUS_PILL[project.status].label}
-        </span>
+
+        {/* Right actions */}
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Preview button */}
+          {project.preview_url && (
+            <a
+              href={project.preview_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 rounded-xl bg-surface px-3 py-2 text-[12.5px] font-medium text-foreground ring-1 ring-border transition hover:bg-surface-raised"
+            >
+              <ExternalLink className="size-3.5" strokeWidth={1.75} />
+              Preview
+            </a>
+          )}
+
+          {/* Open in workspace */}
+          <Link
+            href={`/create?projectId=${project.id}`}
+            className="flex items-center gap-1.5 rounded-xl bg-surface px-3 py-2 text-[12.5px] font-medium text-foreground ring-1 ring-border transition hover:bg-surface-raised"
+          >
+            <ArrowUpRight className="size-3.5" strokeWidth={1.75} />
+            Edit
+          </Link>
+
+          {/* Publish button — shown when there are unpublished changes or in publishing/failed state */}
+          <AnimatePresence mode="wait">
+            {(hasUnpublishedChanges || publishState === "publishing" || publishState === "published" || publishState === "failed") && (
+              <motion.button
+                key={publishState}
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                type="button"
+                onClick={publishState === "idle" || publishState === "failed" ? handlePublish : undefined}
+                disabled={publishState === "publishing"}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-xl px-3 py-2 text-[12.5px] font-semibold transition",
+                  publishState === "publishing" && "bg-accent/20 text-accent cursor-wait",
+                  publishState === "published" && "bg-emerald-500/10 text-emerald-600 ring-1 ring-emerald-500/30",
+                  publishState === "failed" && "bg-destructive/10 text-destructive ring-1 ring-destructive/30",
+                  (publishState === "idle" || hasUnpublishedChanges) && "bg-gradient-to-r from-accent to-violet-500 text-white shadow-[0_4px_16px_-4px_rgba(30,107,255,0.45)] hover:opacity-90 active:scale-[0.98]",
+                )}
+              >
+                {publishState === "publishing" && (
+                  <>
+                    <Loader2 className="size-3.5 animate-spin" strokeWidth={2} />
+                    Deploying…
+                  </>
+                )}
+                {publishState === "published" && (
+                  <>
+                    <CheckCircle2 className="size-3.5" strokeWidth={2} />
+                    Deployed
+                  </>
+                )}
+                {publishState === "failed" && (
+                  <>
+                    <AlertTriangle className="size-3.5" strokeWidth={2} />
+                    Retry deploy
+                  </>
+                )}
+                {publishState === "idle" && (
+                  <>
+                    <Zap className="size-3.5" strokeWidth={2} />
+                    Publish
+                  </>
+                )}
+              </motion.button>
+            )}
+          </AnimatePresence>
+        </div>
       </div>
 
       {/* Tabs */}
-      <div role="tablist" aria-label="Project sections" className="mb-5 flex gap-1 border-b border-border">
+      <div role="tablist" aria-label="Project sections" className="mb-5 flex gap-1 overflow-x-auto border-b border-border scrollbar-none">
         {TABS.map(({ id, label, icon: Icon }) => {
           const active = tab === id;
           return (
@@ -1114,7 +1521,7 @@ export function ProjectDashboard({
               aria-selected={active}
               onClick={() => setTab(id)}
               className={cn(
-                "relative flex items-center gap-1.5 px-3 py-2 text-[12.5px] font-medium transition",
+                "relative flex shrink-0 items-center gap-1.5 px-3 py-2 text-[12.5px] font-medium transition",
                 active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
               )}
             >
@@ -1143,7 +1550,13 @@ export function ProjectDashboard({
           {tab === "architecture" && <ArchitectureTab project={project} deployments={deployments} />}
           {tab === "deployments" && <DeploymentsTab deployments={deployments} />}
           {tab === "analytics" && <AnalyticsTab project={project} />}
+          {tab === "users" && <UsersTab project={project} />}
+          {tab === "domains" && <DomainsTab project={project} />}
+          {tab === "security" && <SecurityTab project={project} />}
           {tab === "environment" && <EnvironmentTab project={project} />}
+          {tab === "logs" && <LogsTab project={project} />}
+          {tab === "billing" && <BillingTab project={project} />}
+          {tab === "integrations" && <IntegrationsTab />}
           {tab === "media" && <MediaTab projectId={project.id} />}
           {tab === "memory" && <MemoryTab memory={memory} />}
           {tab === "settings" && <SettingsTab project={project} />}

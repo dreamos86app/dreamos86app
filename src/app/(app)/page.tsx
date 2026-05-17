@@ -29,7 +29,7 @@ export default async function HomePage() {
     .select("id, name, gradient, status, updated_at, preview_url")
     .eq("owner_id", user.id)
     .order("updated_at", { ascending: false })
-    .limit(6);
+    .limit(8);
 
   return <OsHome recentProjects={recentProjects ?? []} />;
 }

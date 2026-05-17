@@ -1,5 +1,6 @@
 import {
   Sparkles,
+  Home,
   LayoutGrid,
   LayoutTemplate,
   MessageSquare,
@@ -29,7 +30,7 @@ export type NavSection = {
 };
 
 export const mainNav: NavItem[] = [
-  { title: "Create", href: "/", icon: Sparkles },
+  { title: "Home", href: "/", icon: Home },
   { title: "Apps", href: "/projects", icon: LayoutGrid },
   { title: "Templates", href: "/templates", icon: LayoutTemplate },
   { title: "Explore", href: "/explore", icon: Compass },
@@ -46,7 +47,7 @@ export const mainNav: NavItem[] = [
 export const navSections: NavSection[] = [
   {
     items: [
-      { title: "Create", href: "/", icon: Sparkles },
+      { title: "Home", href: "/", icon: Home },
       { title: "Apps", href: "/projects", icon: LayoutGrid },
       { title: "Templates", href: "/templates", icon: LayoutTemplate },
       { title: "Explore", href: "/explore", icon: Compass },

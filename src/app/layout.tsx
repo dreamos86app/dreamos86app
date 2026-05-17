@@ -43,6 +43,15 @@ export const metadata: Metadata = {
   creator: "DreamOS86",
   publisher: "DreamOS86",
   manifest: "/manifest.webmanifest",
+  icons: {
+    icon: [
+      { url: "/icon.png", type: "image/png" },
+    ],
+    apple: [
+      { url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+    ],
+    shortcut: "/icon.png",
+  },
   formatDetection: { telephone: false, email: false, address: false },
   openGraph: {
     type: "website",
