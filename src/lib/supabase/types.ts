@@ -51,6 +51,7 @@ export interface Database {
           workspace_name: string | null;
           workspace_icon_url: string | null;
           workspace_description: string | null;
+          onboarding_answers: Json;
         };
         Insert: Omit<Database["public"]["Tables"]["profiles"]["Row"], "id" | "created_at" | "updated_at">;
         Update: Partial<Database["public"]["Tables"]["profiles"]["Row"]>;

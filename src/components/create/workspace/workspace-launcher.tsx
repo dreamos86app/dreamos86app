@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { useCreditsStore } from "@/lib/stores/credits-store";
+import { resolveDisplayName } from "@/lib/profile-display";
 import { useHydrated } from "@/lib/hooks/use-hydrated";
 import { LogoutConfirmModal } from "@/components/auth/logout-confirm-modal";
 import { FREE_MONTHLY_QUOTA } from "@/lib/stores/credits-store";
@@ -65,9 +66,10 @@ interface WorkspaceDropdownProps {
 }
 
 function WorkspaceDropdown({ onClose, anchorRect, onLogout }: WorkspaceDropdownProps) {
-  const { profile } = useAuthStore();
+  const { profile, user } = useAuthStore();
   const remaining = useCreditsStore((s) => s.remaining);
   const hydrated = useHydrated();
+  const launcherName = resolveDisplayName(profile, user);
 
   const plan = profile?.plan_id ?? "free";
   const planLabel = plan === "free" ? "Free" : plan.charAt(0).toUpperCase() + plan.slice(1);
@@ -115,19 +117,19 @@ function WorkspaceDropdown({ onClose, anchorRect, onLogout }: WorkspaceDropdownP
           {profile?.avatar_url ? (
             <img
               src={profile.avatar_url}
-              alt={profile.full_name ?? "User"}
+              alt={launcherName}
               className="size-9 shrink-0 rounded-full object-cover ring-1 ring-border"
             />
           ) : (
             <div
               className="flex size-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-accent/50 to-violet-500/50 text-[13px] font-bold text-white"
             >
-              {(profile?.full_name ?? profile?.email ?? "U")[0].toUpperCase()}
+              {launcherName.charAt(0).toUpperCase()}
             </div>
           )}
           <div className="min-w-0 flex-1">
             <p className="truncate text-[13px] font-semibold text-foreground">
-              {profile?.full_name ?? profile?.email?.split("@")[0] ?? "User"}
+              {launcherName}
             </p>
             <div className="flex items-center gap-1.5">
               <span className="inline-flex items-center rounded-full bg-accent/10 px-1.5 py-0.5 text-[10.5px] font-semibold text-accent">
@@ -235,16 +237,18 @@ export function WorkspaceLauncher({
   projectName?: string | null;
   isBusy?: boolean;
 }) {
-  const { profile } = useAuthStore();
+  const { profile, user } = useAuthStore();
   const [open, setOpen] = React.useState(false);
   const [anchorRect, setAnchorRect] = React.useState<DOMRect | null>(null);
   const [mounted, setMounted] = React.useState(false);
   const [showLogoutModal, setShowLogoutModal] = React.useState(false);
   const triggerRef = React.useRef<HTMLButtonElement>(null);
 
-  const workspaceName = profile?.full_name
-    ? `${profile.full_name.split(" ")[0]}'s Workspace`
-    : profile?.email?.split("@")[0] ?? "Workspace";
+  const workspaceName = (() => {
+    const dn = resolveDisplayName(profile, user);
+    if (dn && dn !== "User") return `${dn.split(/\s+/)[0]}'s Workspace`;
+    return profile?.email?.split("@")[0] ?? "Workspace";
+  })();
 
   React.useEffect(() => { setMounted(true); }, []);
 

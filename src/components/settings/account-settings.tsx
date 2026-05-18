@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -16,6 +17,7 @@ import { variants } from "@/lib/motion";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { useCreditsStore } from "@/lib/stores/credits-store";
 import { createClient } from "@/lib/supabase/client";
+import { resolveDisplayName } from "@/lib/profile-display";
 import { cn } from "@/lib/utils";
 
 // ─── Avatar ───────────────────────────────────────────────────────────────────
@@ -390,7 +392,18 @@ function ConnectedAccountsSection() {
   ];
 
   async function handleConnect(providerId: "google" | "github") {
-    await supabase.auth.linkIdentity({ provider: providerId, options: { redirectTo: `${window.location.origin}/auth/callback?next=/settings/account` } });
+    const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent("/settings/account")}`;
+    if (providerId === "google") {
+      await supabase.auth.linkIdentity({
+        provider: "google",
+        options: {
+          redirectTo,
+          queryParams: { prompt: "select_account", access_type: "offline" },
+        },
+      });
+      return;
+    }
+    await supabase.auth.linkIdentity({ provider: providerId, options: { redirectTo } });
   }
 
   async function handleUnlink(identityId: string, provider: string) {
@@ -484,14 +497,16 @@ function ProfileSection() {
   const supabase = createClient();
   const { profile, user, setProfile } = useAuthStore();
   const router = useRouter();
-  // Fall back to auth user email/name when profile row hasn't been synced yet
   const authEmail = user?.email ?? user?.user_metadata?.email ?? "";
-  const authName = (user?.user_metadata?.full_name as string | undefined) ??
-    (user?.user_metadata?.name as string | undefined) ?? "";
-  const displayName = profile?.full_name ?? (authName || authEmail.split("@")[0] || "User");
-  const displayEmail = profile?.email ?? authEmail;
+  const displayName = resolveDisplayName(profile, user);
 
-  const [name, setName] = React.useState(profile?.full_name ?? authName ?? "");
+  const [name, setName] = React.useState(profile?.full_name ?? "");
+  React.useEffect(() => {
+    setName(profile?.full_name ?? "");
+  }, [profile?.full_name, profile?.id]);
+
+  const displayEmail = profile?.email ?? authEmail;
+  const nameDirty = name.trim() !== (profile?.full_name ?? "").trim();
   const [saving, setSaving] = React.useState(false);
   const [saveError, setSaveError] = React.useState<string | null>(null);
   const [uploading, setUploading] = React.useState(false);
@@ -515,7 +530,7 @@ function ProfileSection() {
       toast.error("Failed to save profile");
     } else if (data) {
       setProfile(data as typeof profile);
-      toast.success("Profile updated");
+      toast.success("Saved successfully");
       router.refresh();
     }
     setSaving(false);
@@ -562,7 +577,7 @@ function ProfileSection() {
       if (updateErr) throw updateErr;
       if (data) {
         setProfile(data as typeof profile);
-        toast.success("Avatar updated");
+        toast.success("Saved successfully");
         router.refresh();
       }
     } catch (err) {
@@ -653,11 +668,16 @@ function ProfileSection() {
           )}
 
           <div className="flex items-center justify-end gap-2">
-            <Button variant="accent" size="sm" type="submit" disabled={saving} className="gap-1.5">
+            <Button variant="accent" size="sm" type="submit" disabled={saving || !nameDirty} className="gap-1.5">
               {saving && <Loader2 className="size-3.5 animate-spin" />}
               Save profile
             </Button>
           </div>
+          <p className="text-[11px] text-muted-foreground">
+            <Link href="/onboarding?replay=1" className="text-accent hover:underline underline-offset-2">
+              Review onboarding steps
+            </Link>
+          </p>
         </form>
       </CardContent>
     </Card>

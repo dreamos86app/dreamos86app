@@ -16,6 +16,7 @@ import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { useHydrated } from "@/lib/hooks/use-hydrated";
 import { getAppUrl } from "@/lib/app-url";
+import { resolveDisplayName } from "@/lib/profile-display";
 import { LogoutConfirmModal } from "@/components/auth/logout-confirm-modal";
 
 // ─── Menu item types ──────────────────────────────────────────────────────────
@@ -110,7 +111,7 @@ function DarkModeToggle({ onClose: _onClose }: { onClose: () => void }) {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function UserMenu() {
-  const { profile, reset: resetAuth } = useAuthStore();
+  const { profile, reset: resetAuth, user } = useAuthStore();
   const [copied, setCopied] = React.useState(false);
   const { remaining, resetAt, reset: resetCredits } = useCreditsStore();
   const hydrated = useHydrated();
@@ -124,7 +125,7 @@ export function UserMenu() {
   // the SSR snapshot — reading it during the first paint causes mismatches.
   const safeProfile = hydrated ? profile : null;
 
-  const displayName = safeProfile?.full_name ?? safeProfile?.email?.split("@")[0] ?? "User";
+  const displayName = resolveDisplayName(safeProfile, hydrated ? user : null);
   const displayEmail = safeProfile?.email ?? "";
   const planLabel = safeProfile
     ? (safeProfile.plan_id === "free" ? "Free Plan" : `${safeProfile.plan_id.charAt(0).toUpperCase() + safeProfile.plan_id.slice(1)} Plan`)

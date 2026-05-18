@@ -1,334 +1,409 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  ArrowRight, ArrowLeft, Check, Sparkles, Building,
-  Users, Loader2, MessageCircle, Pencil, Zap,
+  ArrowRight,
+  ArrowLeft,
+  Check,
+  Loader2,
+  Sparkles,
+  Lock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { variants, transition } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/lib/stores/auth-store";
+import { resolveDisplayName } from "@/lib/profile-display";
+import {
+  persistReferralCodeForBrowser,
+  readReferralCodeFromBrowserCookie,
+  DREAMOS_REF_STORAGE_KEY,
+} from "@/lib/auth/ref-cookie";
 
-const USE_CASES = [
-  { id: "saas", label: "SaaS Product", icon: Building, desc: "Build a commercial software product" },
-  { id: "personal", label: "Personal Project", icon: Sparkles, desc: "Explore ideas and experiment" },
-  { id: "client", label: "Client Work", icon: Users, desc: "Build apps for clients" },
-  { id: "team", label: "Team Workspace", icon: Users, desc: "Internal tools for your team" },
+const HEAR_ABOUT = [
+  { id: "friend", label: "Friend / referral" },
+  { id: "tiktok", label: "TikTok / Instagram" },
+  { id: "youtube", label: "YouTube" },
+  { id: "google", label: "Google search" },
+  { id: "x", label: "X / Twitter" },
+  { id: "other_hear", label: "Other" },
 ];
 
-const EXPERIENCE_LEVELS = [
-  { id: "beginner", label: "Beginner", desc: "New to building apps" },
-  { id: "intermediate", label: "Intermediate", desc: "Comfortable with code" },
-  { id: "advanced", label: "Advanced", desc: "Experienced developer" },
+const BUILD_FIRST = [
+  { id: "saas_dashboard", label: "SaaS dashboard" },
+  { id: "ai_chatbot", label: "AI chatbot" },
+  { id: "ecommerce", label: "E-commerce" },
+  { id: "marketplace", label: "Marketplace" },
+  { id: "social", label: "Social app" },
+  { id: "internal", label: "Internal tool" },
+  { id: "other_build", label: "Other" },
 ];
 
-const MODELS = [
-  { id: "claude-3-5-sonnet", label: "Claude Sonnet", desc: "Best for most tasks, fast and smart" },
-  { id: "gpt-4o", label: "GPT-4o", desc: "Great for code and reasoning" },
-  { id: "gemini-2-0-flash", label: "Gemini Flash", desc: "Fast and efficient" },
-];
-
-const TOTAL_STEPS = 5;
-
-const MODES_INTRO = [
-  {
-    id: "discuss",
-    icon: MessageCircle,
-    label: "Discuss",
-    accent: "text-blue-500 bg-blue-500/10 ring-blue-500/25",
-    desc: "Talk with your AI architect. Shape ideas, explore trade-offs, plan architecture — before a single line is written.",
-  },
-  {
-    id: "edit",
-    icon: Pencil,
-    label: "Edit",
-    accent: "text-amber-500 bg-amber-500/10 ring-amber-500/25",
-    desc: "Surgical precision. Target a specific component, route, schema, or flow for a focused AI modification.",
-  },
-  {
-    id: "build",
-    icon: Zap,
-    label: "Build",
-    accent: "text-violet-500 bg-violet-500/10 ring-violet-500/25",
-    desc: "Full system generation. Describe your app and DreamOS86 builds routes, UI, database, auth, and APIs — all at once.",
-  },
-];
+const TOTAL_STEPS = 4;
 
 export function OnboardingView() {
   const router = useRouter();
-  const { profile, setProfile } = useAuthStore();
+  const searchParams = useSearchParams();
+  const { profile, user, setProfile } = useAuthStore();
+
   const [step, setStep] = React.useState(1);
-  const [workspaceName, setWorkspaceName] = React.useState(
-    profile?.full_name ? `${profile.full_name}'s Workspace` : "",
-  );
-  const [useCase, setUseCase] = React.useState<string | null>(null);
-  const [experienceLevel, setExperienceLevel] = React.useState<string | null>(null);
-  const [preferredModel, setPreferredModel] = React.useState("claude-3-5-sonnet");
+  const [hearAbout, setHearAbout] = React.useState<string | null>(null);
+  const [buildFirst, setBuildFirst] = React.useState<string | null>(null);
+  const [promoInput, setPromoInput] = React.useState("");
+  const [promoLocked, setPromoLocked] = React.useState(false);
+  const [promoError, setPromoError] = React.useState<string | null>(null);
+  const [validatingPromo, setValidatingPromo] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
+  const [saveError, setSaveError] = React.useState<string | null>(null);
+
+  const replay = searchParams.get("replay") === "1";
+  const nextUrl = searchParams.get("next") ?? "/";
+
+  React.useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const ref = params.get("ref")?.trim().toUpperCase();
+      if (ref && ref.length >= 4 && ref.length <= 16) {
+        persistReferralCodeForBrowser(ref);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  React.useEffect(() => {
+    const fromProfile = profile?.referred_by?.trim().toUpperCase() ?? "";
+    const fromCookie = readReferralCodeFromBrowserCookie();
+    try {
+      const ls = window.localStorage.getItem(DREAMOS_REF_STORAGE_KEY)?.trim().toUpperCase() ?? "";
+      const locked = fromProfile || fromCookie || ls;
+      if (locked) {
+        setPromoInput(locked);
+        setPromoLocked(true);
+      }
+    } catch {
+      if (fromProfile || fromCookie) {
+        setPromoInput(fromProfile || fromCookie || "");
+        setPromoLocked(Boolean(fromProfile || fromCookie));
+      }
+    }
+  }, [profile?.referred_by]);
+
+  React.useEffect(() => {
+    if (!profile?.onboarding_completed || replay) return;
+    router.replace("/");
+  }, [profile?.onboarding_completed, replay, router]);
+
+  const displayName = resolveDisplayName(profile, user);
+  const email = profile?.email ?? user?.email ?? "";
+  const avatarUrl = profile?.avatar_url ?? null;
 
   function canAdvance() {
-    if (step === 1) return workspaceName.trim().length >= 2;
-    if (step === 2) return !!useCase;
-    if (step === 3) return !!experienceLevel;
-    return true;
+    if (step === 1) return true;
+    if (step === 2) return Boolean(hearAbout);
+    if (step === 3) {
+      if (!promoInput.trim()) return true;
+      return !promoError;
+    }
+    if (step === 4) return Boolean(buildFirst);
+    return false;
   }
 
-  async function complete() {
-    setSaving(true);
+  async function validatePromoManual(): Promise<boolean> {
+    const raw = promoInput.trim().toUpperCase();
+    if (!raw || promoLocked) {
+      setPromoError(null);
+      return true;
+    }
+    setValidatingPromo(true);
+    setPromoError(null);
     try {
-      await fetch("/api/onboarding", {
+      const res = await fetch("/api/referrals/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: raw }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.valid) {
+        setPromoError(
+          data.error === "self_referral"
+            ? "You can’t use your own referral code."
+            : data.error === "code_not_found"
+              ? "That code wasn’t found."
+              : "Invalid referral code.",
+        );
+        return false;
+      }
+      setPromoError(null);
+      return true;
+    } catch {
+      setPromoError("Couldn’t validate code. Try again.");
+      return false;
+    } finally {
+      setValidatingPromo(false);
+    }
+  }
+
+  async function finish() {
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const hearLabel = HEAR_ABOUT.find((h) => h.id === hearAbout)?.label ?? hearAbout ?? "";
+      const buildLabel = BUILD_FIRST.find((b) => b.id === buildFirst)?.label ?? buildFirst ?? "";
+
+      const res = await fetch("/api/onboarding", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          workspace_name: workspaceName,
-          use_case: useCase,
-          experience_level: experienceLevel,
-          preferred_model: preferredModel,
+          hear_about: hearLabel,
+          build_first: buildLabel,
+          promo_code: promoInput.trim() || undefined,
         }),
       });
 
-      // Update local profile state
-      if (profile) {
-        setProfile({ ...profile, onboarding_completed: true });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setSaveError(
+          typeof data.error === "string"
+            ? data.error
+            : "Couldn’t save onboarding. Check your referral code or try again.",
+        );
+        setSaving(false);
+        return;
       }
 
-      router.push("/");
+      if (profile) {
+        setProfile({
+          ...profile,
+          onboarding_completed: true,
+          onboarding_completed_at: new Date().toISOString(),
+          use_case: buildLabel,
+        });
+      }
+
+      try {
+        window.localStorage.removeItem(DREAMOS_REF_STORAGE_KEY);
+      } catch {
+        /* ignore */
+      }
+
+      const dest = nextUrl.startsWith("/") ? nextUrl : "/";
+      router.push(dest);
+      router.refresh();
     } catch {
+      setSaveError("Something went wrong.");
+    } finally {
       setSaving(false);
     }
   }
 
   const steps = [
     {
-      title: "What's your workspace name?",
-      subtitle: "This is how your workspace appears to collaborators.",
+      title: "Welcome to DreamOS86",
+      subtitle: "Let’s personalize your workspace in a minute.",
       content: (
-        <div className="space-y-3">
-          <Input
-            placeholder="e.g. Acme Studio, My Projects"
-            value={workspaceName}
-            onChange={(e) => setWorkspaceName(e.target.value)}
-            autoFocus
-            className="text-[14px]"
-          />
-        </div>
-      ),
-    },
-    {
-      title: "What will you be building?",
-      subtitle: "This helps us suggest the right templates and tools.",
-      content: (
-        <div className="grid grid-cols-2 gap-2">
-          {USE_CASES.map((uc) => (
-            <button
-              key={uc.id}
-              onClick={() => setUseCase(uc.id)}
-              className={cn(
-                "flex flex-col items-start gap-2 rounded-[var(--radius-lg)] p-4 text-left ring-1 transition",
-                useCase === uc.id
-                  ? "bg-accent/8 ring-accent/40"
-                  : "bg-surface ring-border hover:ring-accent/20",
-              )}
-            >
-              <div className={cn(
-                "flex size-8 items-center justify-center rounded-lg",
-                useCase === uc.id ? "bg-accent/15" : "bg-muted/50",
-              )}>
-                <uc.icon className={cn("size-4", useCase === uc.id ? "text-accent" : "text-muted-foreground")} strokeWidth={1.75} />
+        <div className="space-y-5">
+          <div className="flex items-center gap-4">
+            {avatarUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={avatarUrl}
+                alt=""
+                className="size-14 shrink-0 rounded-full object-cover ring-1 ring-border"
+              />
+            ) : (
+              <div className="flex size-14 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-accent/40 to-violet-500/50 text-lg font-bold text-white">
+                {displayName.charAt(0).toUpperCase()}
               </div>
-              <div>
-                <p className={cn("text-[13px] font-semibold", useCase === uc.id ? "text-foreground" : "text-foreground/80")}>
-                  {uc.label}
-                </p>
-                <p className="mt-0.5 text-[11px] text-muted-foreground">{uc.desc}</p>
-              </div>
-            </button>
-          ))}
-        </div>
-      ),
-    },
-    {
-      title: "Your experience level?",
-      subtitle: "We'll adjust how we explain things and which features to highlight.",
-      content: (
-        <div className="space-y-2">
-          {EXPERIENCE_LEVELS.map((level) => (
-            <button
-              key={level.id}
-              onClick={() => setExperienceLevel(level.id)}
-              className={cn(
-                "flex w-full items-center gap-3 rounded-[var(--radius-lg)] p-4 text-left ring-1 transition",
-                experienceLevel === level.id
-                  ? "bg-accent/8 ring-accent/40"
-                  : "bg-surface ring-border hover:ring-accent/20",
-              )}
-            >
-              <div className={cn(
-                "flex size-5 shrink-0 items-center justify-center rounded-full ring-1 transition",
-                experienceLevel === level.id ? "bg-accent ring-accent" : "ring-border",
-              )}>
-                {experienceLevel === level.id && <Check className="size-3 text-white" strokeWidth={3} />}
-              </div>
-              <div>
-                <p className="text-[13px] font-semibold text-foreground">{level.label}</p>
-                <p className="text-[12px] text-muted-foreground">{level.desc}</p>
-              </div>
-            </button>
-          ))}
-        </div>
-      ),
-    },
-    {
-      title: "Pick your default AI model",
-      subtitle: "You can always switch models during any session.",
-      content: (
-        <div className="space-y-2">
-          {MODELS.map((m) => (
-            <button
-              key={m.id}
-              onClick={() => setPreferredModel(m.id)}
-              className={cn(
-                "flex w-full items-center gap-3 rounded-[var(--radius-lg)] p-4 text-left ring-1 transition",
-                preferredModel === m.id
-                  ? "bg-accent/8 ring-accent/40"
-                  : "bg-surface ring-border hover:ring-accent/20",
-              )}
-            >
-              <div className={cn(
-                "flex size-5 shrink-0 items-center justify-center rounded-full ring-1 transition",
-                preferredModel === m.id ? "bg-accent ring-accent" : "ring-border",
-              )}>
-                {preferredModel === m.id && <Check className="size-3 text-white" strokeWidth={3} />}
-              </div>
-              <div>
-                <p className="text-[13px] font-semibold text-foreground">{m.label}</p>
-                <p className="text-[12px] text-muted-foreground">{m.desc}</p>
-              </div>
-            </button>
-          ))}
-        </div>
-      ),
-    },
-    {
-      title: "Three modes. One OS.",
-      subtitle: "DreamOS86 works in three modes. Each feels completely different.",
-      content: (
-        <div className="space-y-3">
-          {MODES_INTRO.map((mode) => {
-            const Icon = mode.icon;
-            return (
-              <div
-                key={mode.id}
-                className="flex gap-3 rounded-[var(--radius-lg)] bg-surface p-4 ring-1 ring-border"
-              >
-                <div className={cn(
-                  "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg ring-1",
-                  mode.accent,
-                )}>
-                  <Icon className="size-4" strokeWidth={1.75} />
-                </div>
-                <div>
-                  <p className="text-[13px] font-semibold text-foreground">{mode.label}</p>
-                  <p className="mt-0.5 text-[11.5px] leading-snug text-muted-foreground">{mode.desc}</p>
-                </div>
-              </div>
-            );
-          })}
-          <p className="pt-1 text-[11.5px] text-muted-foreground">
-            Start with <span className="font-semibold text-foreground">Build</span> to generate your first app — you can switch modes at any time.
+            )}
+            <div className="min-w-0">
+              <p className="truncate text-[15px] font-semibold text-foreground">{displayName}</p>
+              <p className="truncate text-[12px] text-muted-foreground">{email}</p>
+            </div>
+          </div>
+          <p className="text-[13px] leading-relaxed text-muted-foreground">
+            DreamOS86 helps you design and ship real apps with AI — faster, with a premium builder
+            experience.
           </p>
+        </div>
+      ),
+    },
+    {
+      title: "How did you hear about us?",
+      subtitle: "Pick the closest match.",
+      content: (
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {HEAR_ABOUT.map((opt) => (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => setHearAbout(opt.id)}
+              className={cn(
+                "flex items-center gap-3 rounded-[var(--radius-lg)] px-4 py-3 text-left text-[13px] font-medium ring-1 transition",
+                hearAbout === opt.id
+                  ? "bg-accent/10 ring-accent/35 text-foreground"
+                  : "bg-surface ring-border text-foreground/90 hover:ring-accent/18",
+              )}
+            >
+              <span
+                className={cn(
+                  "flex size-4 shrink-0 items-center justify-center rounded-full border",
+                  hearAbout === opt.id ? "border-accent bg-accent text-white" : "border-border",
+                )}
+              >
+                {hearAbout === opt.id ? <Check className="size-2.5" strokeWidth={3} /> : null}
+              </span>
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      ),
+    },
+    {
+      title: "Promo / referral code",
+      subtitle: promoLocked
+        ? "This code was applied from your invite link."
+        : "Optional — enter a friend’s code if you have one.",
+      content: (
+        <div className="space-y-3">
+          <div className="relative">
+            <Input
+              value={promoInput}
+              onChange={(e) => {
+                if (promoLocked) return;
+                setPromoInput(e.target.value.toUpperCase());
+                setPromoError(null);
+              }}
+              onBlur={() => {
+                void validatePromoManual();
+              }}
+              placeholder="e.g. ABC12XYZ"
+              disabled={promoLocked}
+              className={cn("pr-10 font-mono text-[13px] uppercase", promoLocked && "opacity-90")}
+            />
+            {promoLocked ? (
+              <Lock className="absolute right-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            ) : null}
+          </div>
+          {validatingPromo ? (
+            <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <Loader2 className="size-3 animate-spin" /> Validating…
+            </p>
+          ) : null}
+          {promoError ? (
+            <p className="text-[12px] text-destructive">{promoError}</p>
+          ) : null}
+        </div>
+      ),
+    },
+    {
+      title: "What do you want to build first?",
+      subtitle: "We’ll tune defaults to match.",
+      content: (
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {BUILD_FIRST.map((opt) => (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => setBuildFirst(opt.id)}
+              className={cn(
+                "rounded-[var(--radius-lg)] px-4 py-3 text-left text-[13px] font-medium ring-1 transition",
+                buildFirst === opt.id
+                  ? "bg-accent/10 ring-accent/35 text-foreground"
+                  : "bg-surface ring-border text-foreground/90 hover:ring-accent/18",
+              )}
+            >
+              {opt.label}
+            </button>
+          ))}
         </div>
       ),
     },
   ];
 
-  const currentStep = steps[step - 1];
+  const isLast = step === TOTAL_STEPS;
 
   return (
-    <div className="relative -mx-[var(--page-padding-x)] -my-[var(--page-padding-y)] flex min-h-[calc(100vh-3.5rem)] flex-col items-center justify-center overflow-hidden bg-atmosphere px-4 py-12">
-      <div className="pointer-events-none absolute -left-[20%] top-[-15%] h-[500px] w-[500px] rounded-full bg-[radial-gradient(circle_at_center,color-mix(in_oklab,var(--accent)_15%,transparent),transparent_62%)] blur-3xl" />
-
-      <div className="relative z-10 w-full max-w-md">
-        {/* Progress bar */}
-        <div className="mb-8 flex items-center gap-2">
-          {Array.from({ length: TOTAL_STEPS }).map((_, i) => (
-            <div
-              key={i}
-              className={cn(
-                "h-1 flex-1 rounded-full transition-all duration-500",
-                i < step ? "bg-accent" : "bg-muted/60",
-              )}
-            />
-          ))}
+    <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-12">
+      <motion.div
+        variants={variants.fadeUp}
+        initial="hidden"
+        animate="show"
+        className="w-full max-w-lg"
+      >
+        <div className="mb-6 flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.12em] text-accent">
+          <Sparkles className="size-3.5" strokeWidth={1.75} />
+          Onboarding · step {step} of {TOTAL_STEPS}
         </div>
 
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={step}
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
-            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-          >
-            <div className="mb-6">
-              <div className="mb-1 text-[12px] font-medium text-accent">
-                Step {step} of {TOTAL_STEPS}
-              </div>
-              <h1 className="text-[22px] font-semibold tracking-[-0.04em] text-foreground">
-                {currentStep.title}
-              </h1>
-              <p className="mt-1 text-[13px] text-muted-foreground">
-                {currentStep.subtitle}
-              </p>
-            </div>
-
-            {currentStep.content}
-          </motion.div>
-        </AnimatePresence>
-
-        <div className="mt-8 flex items-center gap-3">
-          {step > 1 && (
-            <Button
-              variant="secondary"
-              size="md"
-              onClick={() => setStep((s) => s - 1)}
-              className="gap-1.5"
+        <div className="overflow-hidden rounded-[var(--radius-xl)] bg-glass shadow-[var(--shadow-glass)] ring-1 ring-border p-8">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={step}
+              initial={{ opacity: 0, x: 10 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -10 }}
+              transition={transition.card}
             >
-              <ArrowLeft className="size-3.5" strokeWidth={2} /> Back
-            </Button>
-          )}
-          <Button
-            variant="accent"
-            size="md"
-            disabled={!canAdvance() || saving}
-            onClick={() => {
-              if (step < TOTAL_STEPS) setStep((s) => s + 1);
-              else complete();
-            }}
-            className="ml-auto gap-1.5"
-          >
-            {saving ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : step < TOTAL_STEPS ? (
-              <>Continue <ArrowRight className="size-3.5" strokeWidth={2} /></>
-            ) : (
-              <>Finish setup <Check className="size-3.5" strokeWidth={2.5} /></>
-            )}
-          </Button>
-        </div>
+              <h1 className="text-[22px] font-semibold tracking-[-0.04em] text-foreground">
+                {steps[step - 1].title}
+              </h1>
+              <p className="mt-1.5 text-[13px] text-muted-foreground">{steps[step - 1].subtitle}</p>
+              <div className="mt-7">{steps[step - 1].content}</div>
+            </motion.div>
+          </AnimatePresence>
 
-        <button
-          onClick={complete}
-          disabled={saving}
-          className="mt-4 w-full text-center text-[12px] text-muted-foreground/60 transition hover:text-muted-foreground"
-        >
-          Skip for now
-        </button>
-      </div>
+          {saveError ? (
+            <p className="mt-5 text-[12px] text-destructive">{saveError}</p>
+          ) : null}
+
+          <div className="mt-8 flex items-center justify-between gap-3">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className={cn(step === 1 && "invisible")}
+              onClick={() => setStep((s) => Math.max(1, s - 1))}
+              disabled={saving}
+            >
+              <ArrowLeft className="size-3.5" strokeWidth={1.75} /> Back
+            </Button>
+            <Button
+              type="button"
+              variant="accent"
+              size="sm"
+              className="gap-1.5"
+              disabled={!canAdvance() || saving || (step === 3 && Boolean(promoError))}
+              onClick={() => {
+                void (async () => {
+                  if (step === 3) {
+                    if (promoInput.trim() && !(await validatePromoManual())) return;
+                  }
+                  if (isLast) void finish();
+                  else setStep((s) => Math.min(TOTAL_STEPS, s + 1));
+                })();
+              }}
+            >
+              {saving ? (
+                <>
+                  <Loader2 className="size-3.5 animate-spin" /> Saving…
+                </>
+              ) : isLast ? (
+                <>
+                  Finish <Check className="size-3.5" strokeWidth={1.75} />
+                </>
+              ) : (
+                <>
+                  Continue <ArrowRight className="size-3.5" strokeWidth={1.75} />
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+      </motion.div>
     </div>
   );
 }

@@ -15,6 +15,7 @@ import {
   humanizeAuthError,
   CALLBACK_ERROR_MESSAGES,
 } from "@/lib/auth";
+import { persistReferralCodeForBrowser } from "@/lib/auth/ref-cookie";
 
 export function LoginView() {
   const router = useRouter();
@@ -27,6 +28,16 @@ export function LoginView() {
   const [oauthLoading, setOauthLoading] = React.useState<"google" | "github" | null>(null);
   const [isOnline, setIsOnline] = React.useState(true);
   const [lastAction, setLastAction] = React.useState<(() => void) | null>(null);
+
+  React.useEffect(() => {
+    try {
+      const p = new URLSearchParams(window.location.search);
+      const ref = p.get("ref");
+      if (ref?.trim()) persistReferralCodeForBrowser(ref);
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   // Network status detection
   React.useEffect(() => {
@@ -73,7 +84,8 @@ export function LoginView() {
     setOauthLoading(provider);
     setError(null);
 
-    const { error: oauthError } = await authSignInWithOAuth(provider);
+    const next = searchParams.get("next") ?? undefined;
+    const { error: oauthError } = await authSignInWithOAuth(provider, next);
 
     if (oauthError) {
       setError(humanizeAuthError(oauthError.message, provider));

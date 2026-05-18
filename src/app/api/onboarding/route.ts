@@ -1,61 +1,86 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import type { Json } from "@/lib/supabase/types";
 import { z } from "zod";
+import { attachReferralByCode } from "@/lib/referrals/server-referral";
 
-const schema = z.object({
-  workspace_name: z.string().min(1).max(100).optional(),
-  use_case: z.string().optional(),
-  experience_level: z.enum(["beginner", "intermediate", "advanced"]).optional(),
-  preferred_model: z.string().optional(),
-  referral_source: z.string().optional(),
+const bodySchema = z.object({
+  hear_about: z.string().min(1).max(120),
+  build_first: z.string().min(1).max(120),
+  promo_code: z.string().max(16).optional(),
 });
 
 export async function POST(request: Request) {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const body = await request.json();
-  const parsed = schema.safeParse(body);
-  if (!parsed.success) return NextResponse.json({ error: "Invalid request" }, { status: 400 });
+  const json = await request.json().catch(() => null);
+  const parsed = bodySchema.safeParse(json);
+  if (!parsed.success) {
+    return NextResponse.json({ error: "Invalid request" }, { status: 400 });
+  }
 
-  const answers = parsed.data;
+  const { hear_about, build_first, promo_code } = parsed.data;
   const now = new Date().toISOString();
 
-  // Upsert onboarding record
+  const code = promo_code?.trim().toUpperCase() ?? "";
+  if (code) {
+    const applied = await attachReferralByCode(user.id, code);
+    if (!applied.ok && applied.error !== "insert_failed") {
+      const status =
+        applied.error === "code_not_found"
+          ? 404
+          : applied.error === "self_referral" || applied.error === "referral_limit_reached"
+            ? 400
+            : 400;
+      return NextResponse.json({ error: applied.error }, { status });
+    }
+  }
+
+  const onboarding_answers = {
+    hear_about,
+    build_first,
+    promo_code: code || null,
+    completed_at: now,
+  };
+
   await supabase.from("onboarding").upsert({
     user_id: user.id,
     completed_at: now,
-    workspace_name: answers.workspace_name ?? null,
-    use_case: answers.use_case ?? null,
-    experience_level: answers.experience_level ?? null,
-    preferred_model: answers.preferred_model ?? null,
-    referral_source: answers.referral_source ?? null,
-    answers,
+    workspace_name: null,
+    experience_level: null,
+    preferred_model: null,
+    referral_source: hear_about,
+    use_case: build_first,
+    answers: onboarding_answers as Json,
   });
 
-  // Mark profile as onboarding completed
-  await supabase.from("profiles").update({
-    onboarding_completed: true,
-    onboarding_completed_at: now,
-    use_case: answers.use_case ?? null,
-    experience_level: answers.experience_level ?? null,
-    default_model_id: answers.preferred_model ?? "claude-3-5-sonnet",
-  }).eq("id", user.id);
+  await supabase
+    .from("profiles")
+    .update({
+      onboarding_completed: true,
+      onboarding_completed_at: now,
+      onboarding_answers,
+      use_case: build_first,
+    })
+    .eq("id", user.id);
 
-  // Update workspace name if provided
-  if (answers.workspace_name) {
-    await supabase.from("workspaces").update({
-      name: answers.workspace_name,
-    }).eq("owner_id", user.id);
-  }
+  await supabase.rpc("claim_referral_reward", {
+    p_referred_id: user.id,
+    p_credits: 20,
+  });
 
   return NextResponse.json({ success: true });
 }
 
 export async function GET() {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { data: profile } = await supabase

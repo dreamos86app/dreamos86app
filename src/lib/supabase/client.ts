@@ -9,10 +9,10 @@ import { createBrowserClient } from "@supabase/ssr";
 import type { Database } from "./types";
 
 let client: ReturnType<typeof createBrowserClient<Database>> | undefined;
+let cachedUrl: string | undefined;
+let cachedKey: string | undefined;
 
 export function createClient() {
-  if (client) return client;
-
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
@@ -24,6 +24,11 @@ export function createClient() {
     );
   }
 
+  // Recreate client when env changes (e.g. after editing .env.local) so OAuth never hits a stale project URL.
+  if (client && cachedUrl === url && cachedKey === key) return client;
+
   client = createBrowserClient<Database>(url, key);
+  cachedUrl = url;
+  cachedKey = key;
   return client;
 }

@@ -50,6 +50,15 @@ export default function SettingsGeneralPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profileId]);
 
+  const baselineName = profile?.workspace_name ?? "My Workspace";
+  const baselineDesc = profile?.workspace_description ?? "";
+  const baselineIcon = profile?.workspace_icon_url ?? null;
+
+  const workspaceDirty =
+    workspaceName.trim() !== baselineName.trim() ||
+    description.trim() !== baselineDesc.trim() ||
+    (workspaceIconUrl ?? null) !== (baselineIcon ?? null);
+
   const themeOptions: { value: string; label: string; icon: React.ReactNode }[] = [
     { value: "light", label: "Light", icon: <Sun className="size-4" strokeWidth={1.6} /> },
     { value: "dark", label: "Dark", icon: <Moon className="size-4" strokeWidth={1.6} /> },
@@ -62,9 +71,9 @@ export default function SettingsGeneralPage() {
     const file = e.target.files?.[0];
     if (!file || !profile?.id) return;
 
-    const validTypes = ["image/png", "image/jpeg", "image/webp", "image/gif"];
+    const validTypes = ["image/png", "image/jpeg", "image/webp"];
     if (!validTypes.includes(file.type)) {
-      toast.error("Please upload a PNG, JPG, WEBP, or GIF image");
+      toast.error("Please upload a PNG, JPG, or WEBP image");
       return;
     }
     if (file.size > 5 * 1024 * 1024) {
@@ -95,7 +104,7 @@ export default function SettingsGeneralPage() {
 
       if (error) throw error;
       if (data) setProfile(data as typeof profile);
-      toast.success("Workspace icon updated");
+      toast.success("Saved successfully");
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Unknown error";
       toast.error(`Failed to upload icon: ${msg}`);
@@ -121,7 +130,7 @@ export default function SettingsGeneralPage() {
 
       if (error) throw error;
       if (data) setProfile(data as typeof profile);
-      toast.success("Workspace settings saved");
+      toast.success("Saved successfully");
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Unknown error";
       toast.error(`Failed to save: ${msg}`);
@@ -207,7 +216,7 @@ export default function SettingsGeneralPage() {
               <input
                 ref={iconInputRef}
                 type="file"
-                accept="image/png,image/jpeg,image/webp,image/gif"
+                accept="image/png,image/jpeg,image/webp"
                 className="hidden"
                 onChange={handleIconChange}
               />
@@ -225,7 +234,7 @@ export default function SettingsGeneralPage() {
                 )}
                 {uploadingIcon ? "Uploading…" : "Upload icon"}
               </Button>
-              <p className="mt-1.5 text-[12px] text-muted-foreground">PNG, JPG, WEBP, or GIF · max 5MB</p>
+              <p className="mt-1.5 text-[12px] text-muted-foreground">PNG, JPG, or WEBP · max 5MB</p>
             </div>
           </div>
 
@@ -258,7 +267,7 @@ export default function SettingsGeneralPage() {
           }}>
             Discard
           </Button>
-          <Button variant="accent" size="md" onClick={handleSaveWorkspace} disabled={saving}>
+          <Button variant="accent" size="md" onClick={handleSaveWorkspace} disabled={saving || !workspaceDirty}>
             {saving ? <Loader2 className="size-4 animate-spin" /> : null}
             Save changes
           </Button>

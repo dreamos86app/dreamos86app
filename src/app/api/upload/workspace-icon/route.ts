@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createSupabaseAdmin } from "@/lib/supabase/admin";
 
 const BUCKET = "workspace-icons";
 const MAX_SIZE = 5 * 1024 * 1024;
@@ -22,18 +23,20 @@ export async function POST(req: NextRequest) {
     if (file.size > MAX_SIZE) {
       return NextResponse.json({ error: "File too large (max 5 MB)" }, { status: 400 });
     }
-    const allowed = ["image/png", "image/jpeg", "image/webp", "image/gif"];
+    const allowed = ["image/png", "image/jpeg", "image/webp"];
     if (!allowed.includes(file.type)) {
-      return NextResponse.json({ error: "Invalid file type. Use PNG, JPG, WEBP, or GIF." }, { status: 400 });
+      return NextResponse.json({ error: "Invalid file type. Use PNG, JPG, or WEBP." }, { status: 400 });
     }
 
-    const ext = file.type === "image/webp" ? "webp" : file.type === "image/gif" ? "gif" : file.type === "image/jpeg" ? "jpg" : "png";
+    const ext = file.type === "image/webp" ? "webp" : file.type === "image/jpeg" ? "jpg" : "png";
     const path = `${user.id}/workspace-icon.${ext}`;
 
     const arrayBuffer = await file.arrayBuffer();
     const buffer = new Uint8Array(arrayBuffer);
 
-    const { error: uploadErr } = await supabase.storage
+    const admin = createSupabaseAdmin();
+
+    const { error: uploadErr } = await admin.storage
       .from(BUCKET)
       .upload(path, buffer, {
         contentType: file.type,
@@ -45,7 +48,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: uploadErr.message }, { status: 500 });
     }
 
-    const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(path);
+    const { data: urlData } = admin.storage.from(BUCKET).getPublicUrl(path);
     return NextResponse.json({ publicUrl: urlData.publicUrl });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Internal error";

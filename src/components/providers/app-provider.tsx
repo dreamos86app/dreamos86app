@@ -10,7 +10,7 @@
  */
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { useCreditsStore } from "@/lib/stores/credits-store";
@@ -21,6 +21,7 @@ import { CommandCenter } from "@/components/command/command-center";
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
   const { setUser, setSession, setProfile, setLoading, reset: resetAuth } =
     useAuthStore();
   const { syncFromDB: syncCredits, reset: resetCredits } = useCreditsStore();
@@ -33,6 +34,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     void useAuthStore.persist.rehydrate();
   }, []);
+
+  const profile = useAuthStore((s) => s.profile);
+  const loading = useAuthStore((s) => s.loading);
+
+  React.useEffect(() => {
+    if (loading) return;
+    if (!profile?.id) return;
+    if (!pathname) return;
+    if (pathname.startsWith("/auth")) return;
+    if (pathname.startsWith("/onboarding")) return;
+    if (pathname.startsWith("/api")) return;
+
+    if (profile.onboarding_completed !== true) {
+      router.replace("/onboarding");
+    }
+  }, [loading, profile?.id, profile?.onboarding_completed, pathname, router]);
 
   React.useEffect(() => {
     const supabase = createClient();
@@ -150,10 +167,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (event === "SIGNED_OUT") {
         disposeRealtime?.();
         disposeRealtime = undefined;
-        // Clear ALL persisted state immediately
+        try {
+          void useAuthStore.persist.clearStorage();
+        } catch { /* ignore */ }
         try {
           const keys = Object.keys(localStorage).filter(
-            (k) => k.startsWith("sb-") || k.startsWith("dreamos-") || k === "supabase.auth.token",
+            (k) =>
+              k.startsWith("sb-") ||
+              k === "dreamos-auth" ||
+              k === "supabase.auth.token",
           );
           keys.forEach((k) => localStorage.removeItem(k));
           sessionStorage.clear();

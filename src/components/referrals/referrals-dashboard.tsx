@@ -206,12 +206,13 @@ export function ReferralsDashboard() {
                 </span>
               </div>
               <button
+                type="button"
                 onClick={copyLink}
                 className={cn(
-                  "flex h-8 items-center gap-1.5 rounded-lg px-3 text-[12px] font-semibold transition",
+                  "flex h-10 min-w-[5.5rem] cursor-pointer items-center gap-1.5 rounded-lg px-3 text-[12px] font-semibold ring-2 ring-transparent transition focus-visible:outline-none focus-visible:ring-ring",
                   copied
-                    ? "bg-emerald-500/10 text-emerald-600"
-                    : "bg-surface text-foreground hover:bg-surface-raised",
+                    ? "bg-emerald-500/10 text-emerald-600 ring-emerald-500/25"
+                    : "bg-surface text-foreground hover:bg-surface-raised active:scale-[0.98]",
                 )}
               >
                 {copied ? <Check className="size-3.5" strokeWidth={2.25} /> : <Copy className="size-3.5" strokeWidth={2.25} />}
@@ -219,8 +220,9 @@ export function ReferralsDashboard() {
               </button>
             </div>
             <button
+              type="button"
               onClick={nativeShare}
-              className="flex h-10 items-center gap-1.5 rounded-xl bg-accent px-4 text-[12.5px] font-semibold text-white shadow-[0_4px_14px_-4px_rgba(30,107,255,0.45)] transition hover:bg-accent/90 active:scale-[0.98]"
+              className="flex h-11 min-h-11 cursor-pointer items-center gap-1.5 rounded-xl bg-accent px-5 text-[12.5px] font-semibold text-white shadow-[0_4px_14px_-4px_rgba(30,107,255,0.45)] ring-2 ring-accent/30 transition hover:bg-accent/90 hover:ring-accent/50 active:scale-[0.98] sm:shrink-0"
             >
               <Share2 className="size-4" strokeWidth={2} />
               Share

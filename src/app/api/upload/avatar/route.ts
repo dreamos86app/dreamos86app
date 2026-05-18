@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createSupabaseAdmin } from "@/lib/supabase/admin";
 
 const BUCKET = "avatars";
 const MAX_SIZE = 5 * 1024 * 1024; // 5 MB
@@ -40,7 +41,9 @@ export async function POST(req: NextRequest) {
     const arrayBuffer = await file.arrayBuffer();
     const buffer = new Uint8Array(arrayBuffer);
 
-    const { error: uploadErr } = await supabase.storage
+    const admin = createSupabaseAdmin();
+
+    const { error: uploadErr } = await admin.storage
       .from(BUCKET)
       .upload(path, buffer, {
         contentType: file.type,
@@ -52,7 +55,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: uploadErr.message }, { status: 500 });
     }
 
-    const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(path);
+    const { data: urlData } = admin.storage.from(BUCKET).getPublicUrl(path);
 
     return NextResponse.json({ publicUrl: urlData.publicUrl });
   } catch (err) {

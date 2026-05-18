@@ -72,9 +72,21 @@ export async function proxy(request: NextRequest) {
   );
 
   // Refresh session — do NOT remove this
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  let user = null as Awaited<
+    ReturnType<typeof supabase.auth.getUser>
+  >["data"]["user"];
+
+  try {
+    const { data } = await supabase.auth.getUser();
+    user = data.user;
+  } catch (e) {
+    // Local Windows dev often hits TLS chain issues hitting supabase.co; without
+    // NODE_TLS_REJECT_UNAUTHORIZED uncaught failures here yield 500 for every route.
+    if (process.env.NODE_ENV !== "production") {
+      console.warn("[dreamos-proxy] Supabase auth refresh failed:", e);
+    }
+    user = null;
+  }
 
   const { pathname } = request.nextUrl;
 

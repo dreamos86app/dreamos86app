@@ -1,18 +1,23 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import {
+  bootstrapProfileFromOAuth,
+  readRefCookieFromRequest,
+} from "@/lib/auth/profile-bootstrap";
+import { DREAMOS_REF_COOKIE } from "@/lib/auth/ref-cookie";
 
 /**
  * Supabase PKCE auth callback — handles ALL auth redirect cases.
  *
- * After successful sign-in, ensures a profile row exists for the user
- * (guards against cases where the DB trigger didn't fire).
+ * After successful sign-in, bootstraps profile via service role (RLS-safe)
+ * and routes first-time users to /onboarding.
  */
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
 
   const code = searchParams.get("code");
   const type = searchParams.get("type"); // "recovery" for password-reset links
-  const next = searchParams.get("next") ?? "/";
+  const nextRaw = searchParams.get("next") ?? "/";
 
   const providerError = searchParams.get("error");
   const providerErrorDesc = searchParams.get("error_description");
@@ -46,76 +51,31 @@ export async function GET(request: Request) {
     return NextResponse.redirect(`${origin}/auth/reset-password`);
   }
 
-  // Ensure profile exists after successful auth (idempotent upsert)
+  const refCookie = readRefCookieFromRequest(request);
+
+  let onboardingCompleted = true;
   try {
-    const { data: { user } } = await supabase.auth.getUser();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
     if (user) {
-      const meta = user.user_metadata ?? {};
-      const rawName: string = meta.full_name ?? meta.name ?? "";
-      const emailPrefix = (user.email ?? "").split("@")[0];
-
-      // Clean and capitalize the display name
-      function toDisplayName(s: string): string {
-        if (!s) return emailPrefix.replace(/[^a-zA-Z0-9\s]/g, "").trim();
-        return s
-          .split(/[\s_\-\.]+/)
-          .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-          .join(" ")
-          .trim();
-      }
-
-      function toUsername(s: string): string {
-        return s.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 24) || "user";
-      }
-
-      const displayName = toDisplayName(rawName) || toDisplayName(emailPrefix);
-      const username = toUsername(emailPrefix);
-
-      const { data: existing } = await supabase
-        .from("profiles")
-        .select("id, full_name, username, credits_remaining, plan_id")
-        .eq("id", user.id)
-        .single();
-
-      const resetAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-
-      if (!existing) {
-        // Profile doesn't exist — create it (trigger may have failed).
-        // Use type cast to bypass strict Supabase insert typing for partial insert.
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (supabase.from("profiles") as any).insert({
-          id: user.id,
-          email: user.email ?? "",
-          full_name: displayName,
-          username,
-          avatar_url: meta.avatar_url ?? meta.picture ?? null,
-          plan_id: "free",
-          credits_remaining: 100,
-          credits_reset_at: resetAt,
-        });
-      } else {
-        // Fill in any missing fields without overwriting existing data
-        if (!existing.full_name && displayName) {
-          await supabase.from("profiles").update({ full_name: displayName }).eq("id", user.id);
-        }
-        if (!existing.username && username) {
-          await supabase.from("profiles").update({ username }).eq("id", user.id);
-        }
-        if (existing.credits_remaining === null || existing.credits_remaining === undefined) {
-          await supabase.from("profiles").update({
-            credits_remaining: 100,
-            credits_reset_at: resetAt,
-          }).eq("id", user.id);
-        }
-        if (!existing.plan_id) {
-          await supabase.from("profiles").update({ plan_id: "free" as const }).eq("id", user.id);
-        }
-      }
+      const result = await bootstrapProfileFromOAuth(user, refCookie);
+      onboardingCompleted = result.onboardingCompleted;
     }
   } catch {
-    // Profile bootstrap failed — don't block auth redirect
+    // Profile bootstrap failed — still send user forward; they can retry from app
   }
 
-  const destination = next.startsWith("/") ? next : "/";
-  return NextResponse.redirect(`${origin}${destination}`);
+  const safeNext = nextRaw.startsWith("/") ? nextRaw : "/";
+  const destination = onboardingCompleted ? safeNext : `/onboarding?next=${encodeURIComponent(safeNext)}`;
+
+  const response = NextResponse.redirect(`${origin}${destination}`);
+  if (refCookie) {
+    response.cookies.set(DREAMOS_REF_COOKIE, "", {
+      path: "/",
+      maxAge: 0,
+      sameSite: "lax",
+    });
+  }
+  return response;
 }

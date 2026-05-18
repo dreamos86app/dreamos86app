@@ -67,10 +67,26 @@ export async function authSignUp(
   });
 }
 
-export async function authSignInWithOAuth(provider: "google" | "github") {
-  return createClient().auth.signInWithOAuth({
+export async function authSignInWithOAuth(provider: "google" | "github", next?: string) {
+  const client = createClient();
+  const redirectTo = getCallbackUrl(next);
+
+  if (provider === "google") {
+    return client.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo,
+        queryParams: {
+          prompt: "select_account",
+          access_type: "offline",
+        },
+      },
+    });
+  }
+
+  return client.auth.signInWithOAuth({
     provider,
-    options: { redirectTo: getCallbackUrl() },
+    options: { redirectTo },
   });
 }
 
@@ -142,7 +158,7 @@ export function humanizeAuthError(
             : provider === "github"
               ? "GitHub"
               : "OAuth";
-        return `${name} sign-in is not yet enabled. Please use email/password for now.`;
+        return `${name} sign-in failed (unsupported provider). Likely causes: wrong Supabase project in env, provider not enabled in that project, anon key doesn’t match the project URL, dev server needs a restart after env changes, or the redirect URL isn’t listed under Supabase Auth URL config.`;
       }
       return replacement;
     }

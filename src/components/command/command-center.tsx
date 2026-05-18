@@ -32,7 +32,7 @@ import {
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
-import { useAuthStore } from "@/lib/stores/auth-store";
+import { runFullSignOut } from "@/lib/auth/sign-out-client";
 
 // ─── Command item types ───────────────────────────────────────────────────────
 
@@ -90,7 +90,6 @@ export function useCommandCenter(): CommandCenterState {
 export function CommandCenter() {
   const router = useRouter();
   const { resolvedTheme, setTheme } = useTheme();
-  const { reset: resetAuth } = useAuthStore();
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
   const [selectedIdx, setSelectedIdx] = React.useState(0);
@@ -198,9 +197,7 @@ export function CommandCenter() {
           icon: LogOut,
           action: () => {
             notifyListeners(false);
-            try { localStorage.removeItem("dreamos-auth"); } catch { /* ignore */ }
-            resetAuth();
-            window.location.replace("/auth/login");
+            void runFullSignOut();
           },
           keywords: ["logout", "sign out", "exit"],
         },

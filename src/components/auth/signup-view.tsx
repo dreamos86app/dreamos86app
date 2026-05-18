@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { variants } from "@/lib/motion";
 import { authSignUp, authSignInWithOAuth, humanizeAuthError } from "@/lib/auth";
+import { persistReferralCodeForBrowser } from "@/lib/auth/ref-cookie";
 import { cn } from "@/lib/utils";
 
 function PasswordStrength({ password }: { password: string }) {
@@ -65,6 +66,20 @@ export function SignupView() {
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState(false);
   const [isOnline, setIsOnline] = React.useState(true);
+  const [referralFromUrl, setReferralFromUrl] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    try {
+      const p = new URLSearchParams(window.location.search);
+      const ref = p.get("ref");
+      if (ref?.trim()) {
+        persistReferralCodeForBrowser(ref);
+        setReferralFromUrl(ref.trim().toUpperCase());
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   React.useEffect(() => {
     setIsOnline(navigator.onLine);
@@ -176,6 +191,12 @@ export function SignupView() {
               <WifiOff className="size-3.5 shrink-0" strokeWidth={2} />
               You&apos;re offline. Check your connection.
             </motion.div>
+          )}
+
+          {referralFromUrl && (
+            <div className="mt-4 rounded-lg bg-accent/8 px-3 py-2.5 text-[12px] text-foreground ring-1 ring-accent/20">
+              Referral code <span className="font-mono font-semibold">{referralFromUrl}</span> will be applied when you finish signing up.
+            </div>
           )}
 
           {error && (
