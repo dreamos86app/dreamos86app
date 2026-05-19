@@ -57,6 +57,18 @@ export interface Database {
           signup_heard_about: string | null;
           signup_referral_code: string | null;
           last_active_at: string | null;
+          subscription_status: string | null;
+          account_status: string | null;
+          monthly_token_limit: number | null;
+          tokens_used_this_period: number | null;
+          tokens_reset_at: string | null;
+          billing_period_start: string | null;
+          billing_period_end: string | null;
+          current_period_start: string | null;
+          current_period_end: string | null;
+          cancel_at_period_end: boolean | null;
+          stripe_price_id: string | null;
+          suspension_reason: string | null;
         };
         Insert: Omit<
           Database["public"]["Tables"]["profiles"]["Row"],

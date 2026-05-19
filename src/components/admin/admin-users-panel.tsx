@@ -285,15 +285,20 @@ export function AdminUsersPanel() {
     if (statusFilter !== "all") params.set("status", statusFilter);
     const qs = params.toString() ? `?${params}` : "";
     const res = await fetch(`/api/admin/users${qs}`);
-    const json = (await res.json()) as { users?: AdminUserListRow[]; error?: string; total?: number };
+    const json = (await res.json()) as {
+      users?: AdminUserListRow[];
+      error?: string;
+      warning?: string;
+      hint?: string;
+      total?: number;
+    };
     if (!res.ok) {
-      setError(json.error ?? `Failed (${res.status})`);
+      const msg = [json.error, json.hint].filter(Boolean).join(" — ");
+      setError(msg || `Failed (${res.status})`);
       setUsers([]);
     } else {
       setUsers(json.users ?? []);
-      if ((json.users ?? []).length === 0 && !debouncedSearch) {
-        setError(null);
-      }
+      setError(json.warning ?? null);
     }
     setLoading(false);
   }, [debouncedSearch, planFilter, statusFilter]);
