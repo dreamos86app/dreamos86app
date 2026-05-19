@@ -17,7 +17,7 @@ If there are unpushed commits or uncommitted changes, production will not show t
 
 1. Vercel dashboard → import/connect repo: `dreamos86app/dreamos86app` (or your fork).
 2. **Production branch**: `main` (must match the branch you push).
-3. **Root directory**: `dreamos-platform` if the repo is a monorepo; otherwise repository root.
+3. **Root directory**: repository root (`.`). For `dreamos86app/dreamos86app`, `package.json` is at the repo root — do **not** set `dreamos-platform` unless that folder exists in the connected repo.
 4. **Build command**: `npm run build`
 5. **Install command**: `npm install`
 
