@@ -1,15 +1,22 @@
 /** Session handoff for home → /create autostart (not billing/project truth). */
 
-export const PENDING_PROMPT_KEY = "dreamos.pendingPrompt";
-const LEGACY_KEY = "dreamos:create-autostart";
-const CONSUMED_PREFIX = "dreamos.pendingPrompt.consumed:";
+import { pushRuntimeDiagnostic } from "@/lib/dev/runtime-diagnostics";
 
-export type AutostartHandoff = {
+export const PENDING_PROMPT_KEY = "dreamos86.pendingPrompt";
+const LEGACY_KEY = "dreamos:create-autostart";
+const DUPLICATE_PREFIX = "dreamos86.promptDup:";
+const DUPLICATE_WINDOW_MS = 3_000;
+
+export type PendingPrompt = {
   id: string;
-  prompt: string;
+  text: string;
   mode: "discuss" | "edit" | "build";
-  idempotencyKey: string;
   createdAt: number;
+  consumed: boolean;
+};
+
+export type AutostartHandoff = PendingPrompt & {
+  idempotencyKey: string;
 };
 
 function newPromptId(): string {
@@ -19,85 +26,144 @@ function newPromptId(): string {
   return `hp_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
 }
 
-export function storeAutostartHandoff(prompt: string, mode: AutostartHandoff["mode"]): string {
-  const id = newPromptId();
-  const idempotencyKey = id;
-  const payload: AutostartHandoff = {
-    id,
-    prompt: prompt.trim(),
-    mode,
-    idempotencyKey,
-    createdAt: Date.now(),
-  };
-  if (typeof sessionStorage !== "undefined") {
-    sessionStorage.setItem(PENDING_PROMPT_KEY, JSON.stringify(payload));
-    sessionStorage.removeItem(LEGACY_KEY);
+function readPending(): PendingPrompt | null {
+  if (typeof sessionStorage === "undefined") return null;
+  try {
+    const raw =
+      sessionStorage.getItem(PENDING_PROMPT_KEY) ?? sessionStorage.getItem(LEGACY_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<PendingPrompt> & {
+      prompt?: string;
+      idempotencyKey?: string;
+    };
+    const text = (parsed.text ?? parsed.prompt ?? "").trim();
+    if (!text) return null;
+    const id = parsed.id ?? parsed.idempotencyKey ?? newPromptId();
+    return {
+      id,
+      text,
+      mode: parsed.mode === "edit" || parsed.mode === "discuss" ? parsed.mode : "build",
+      createdAt: parsed.createdAt ?? Date.now(),
+      consumed: Boolean(parsed.consumed),
+    };
+  } catch {
+    return null;
   }
-  return idempotencyKey;
 }
 
-function markConsumed(id: string): void {
+function writePending(payload: PendingPrompt): void {
   if (typeof sessionStorage === "undefined") return;
-  sessionStorage.setItem(`${CONSUMED_PREFIX}${id}`, "1");
+  sessionStorage.setItem(PENDING_PROMPT_KEY, JSON.stringify(payload));
+  sessionStorage.removeItem(LEGACY_KEY);
 }
 
-function wasConsumed(id: string): boolean {
+function normalizeKey(text: string, mode: string, projectId?: string | null): string {
+  const norm = text.trim().toLowerCase().replace(/\s+/g, " ");
+  return `${mode}:${projectId ?? "none"}:${norm}`;
+}
+
+/** Client duplicate guard — same text + mode + project within 3s. */
+export function shouldSkipDuplicateClientSubmit(
+  text: string,
+  mode: string,
+  projectId?: string | null,
+): boolean {
   if (typeof sessionStorage === "undefined") return false;
-  return sessionStorage.getItem(`${CONSUMED_PREFIX}${id}`) === "1";
+  const key = normalizeKey(text, mode, projectId);
+  const now = Date.now();
+  const prevRaw = sessionStorage.getItem(`${DUPLICATE_PREFIX}${key}`);
+  if (prevRaw) {
+    const prevAt = Number(prevRaw);
+    if (!Number.isNaN(prevAt) && now - prevAt < DUPLICATE_WINDOW_MS) {
+      pushRuntimeDiagnostic("prompt_submit_skipped_duplicate", { mode, projectId, key });
+      return true;
+    }
+  }
+  sessionStorage.setItem(`${DUPLICATE_PREFIX}${key}`, String(now));
+  return false;
 }
 
+export function storeAutostartHandoff(prompt: string, mode: PendingPrompt["mode"]): string {
+  const id = newPromptId();
+  const payload: PendingPrompt = {
+    id,
+    text: prompt.trim(),
+    mode,
+    createdAt: Date.now(),
+    consumed: false,
+  };
+  writePending(payload);
+  return id;
+}
+
+/** URL ?prompt=&autostart=1 → single pending row (does not consume). */
+export function seedPendingFromUrl(
+  prompt: string,
+  mode: PendingPrompt["mode"],
+): PendingPrompt | null {
+  const trimmed = prompt.trim();
+  if (!trimmed) return null;
+  const existing = readPending();
+  if (existing && !existing.consumed) {
+    if (existing.text === trimmed) return existing;
+    return existing;
+  }
+  const payload: PendingPrompt = {
+    id: newPromptId(),
+    text: trimmed,
+    mode,
+    createdAt: Date.now(),
+    consumed: false,
+  };
+  writePending(payload);
+  return payload;
+}
+
+/**
+ * Consume exactly once — marks `consumed: true` in storage before returning.
+ * Prefers session pending over bare URL when both exist (newer id wins if both fresh).
+ */
 export function consumeAutostartHandoff(
   promptFromUrl: string,
-  modeFromUrl: AutostartHandoff["mode"],
+  modeFromUrl: PendingPrompt["mode"],
 ): AutostartHandoff | null {
-  const trimmed = promptFromUrl.trim();
-  if (!trimmed) return null;
+  const urlText = promptFromUrl.trim();
+  const pending = readPending();
 
-  if (typeof sessionStorage !== "undefined") {
-    try {
-      const raw =
-        sessionStorage.getItem(PENDING_PROMPT_KEY) ?? sessionStorage.getItem(LEGACY_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as AutostartHandoff & { id?: string };
-        const id = parsed.id ?? parsed.idempotencyKey;
-        if (
-          parsed.prompt === trimmed &&
-          Date.now() - parsed.createdAt < 10 * 60_000 &&
-          !wasConsumed(id)
-        ) {
-          sessionStorage.removeItem(PENDING_PROMPT_KEY);
-          sessionStorage.removeItem(LEGACY_KEY);
-          markConsumed(id);
-          return {
-            id,
-            prompt: parsed.prompt,
-            mode: parsed.mode ?? modeFromUrl,
-            idempotencyKey: parsed.idempotencyKey ?? id,
-            createdAt: parsed.createdAt,
-          };
-        }
-      }
-    } catch {
-      /* ignore */
+  let chosen: PendingPrompt | null = null;
+
+  if (pending && !pending.consumed) {
+    if (!urlText || pending.text === urlText || Date.now() - pending.createdAt < 10 * 60_000) {
+      chosen = pending;
     }
-
-    const fallbackId = `as_url_${hashPrompt(trimmed)}`;
-    if (wasConsumed(fallbackId)) return null;
-    markConsumed(fallbackId);
   }
 
-  const id = newPromptId();
+  if (!chosen && urlText) {
+    chosen = {
+      id: newPromptId(),
+      text: urlText,
+      mode: modeFromUrl,
+      createdAt: Date.now(),
+      consumed: false,
+    };
+  }
+
+  if (!chosen || chosen.consumed) return null;
+
+  const marked: PendingPrompt = { ...chosen, consumed: true };
+  writePending(marked);
+  pushRuntimeDiagnostic("prompt_submit_consumed_once", {
+    id: marked.id,
+    mode: marked.mode,
+  });
+
   return {
-    id,
-    prompt: trimmed,
-    mode: modeFromUrl,
-    idempotencyKey: id,
-    createdAt: Date.now(),
+    ...marked,
+    idempotencyKey: marked.id,
   };
 }
 
-function hashPrompt(s: string): string {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
-  return Math.abs(h).toString(36);
+/** @deprecated alias */
+export function storePendingPrompt(prompt: string, mode: PendingPrompt["mode"]): string {
+  return storeAutostartHandoff(prompt, mode);
 }

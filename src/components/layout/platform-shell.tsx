@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Home, Compass, MessageSquare, Users, LayoutGrid } from "lucide-react";
 import { Sidebar } from "@/components/layout/sidebar";
 import { TopBar } from "@/components/layout/top-bar";
+import { RuntimeDiagnosticsDrawer } from "@/components/dev/runtime-diagnostics-drawer";
 import { cn } from "@/lib/utils";
 
 const pageMeta: Record<string, { title: string; subtitle?: string }> = {
@@ -313,6 +314,7 @@ export function PlatformShell({
 
       {/* Mobile bottom navigation — hide while drawer is open */}
       {!mobileOpen && <MobileBottomNav />}
+      <RuntimeDiagnosticsDrawer />
     </div>
   );
 }

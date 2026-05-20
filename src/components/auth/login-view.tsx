@@ -141,7 +141,7 @@ export function LoginView() {
       >
         {/* Logo */}
         <div className="mb-8 flex flex-col items-center">
-          <DreamOS86BrandLockup variant="auth" compact href="/" />
+          <DreamOS86BrandLockup variant="auth" compact href="/" gapClassName="gap-0" />
         </div>
 
         <div className="overflow-hidden rounded-[var(--radius-xl)] bg-glass backdrop-blur-xl shadow-[var(--shadow-glass)] ring-1 ring-white/60 dark:ring-white/[0.08] p-8">

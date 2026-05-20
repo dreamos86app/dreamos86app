@@ -34,6 +34,7 @@ export const REQUIRED_SCHEMA: Record<string, readonly string[]> = {
     "credits_used",
     "credits_reset_at",
     "plan_id",
+    "plan_interval",
     "subscription_status",
   ],
   ai_usage_logs: [
@@ -279,10 +280,33 @@ export async function checkRuntimeSchemaHealth(): Promise<SchemaHealthResult> {
         missing.push({
           type: "rpc",
           rpc,
-          hint: "Apply supabase/migrations/20260526180000_charge_tokens_idempotent.sql",
+          hint: "Apply supabase/migrations/20260602120000_runtime_profile_credit_publish_compat.sql",
         });
       }
     }
+  }
+
+  const ensureProbe = await fetch(
+    `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/rpc/ensure_user_profile`,
+    {
+      method: "POST",
+      headers: {
+        apikey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",
+        Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY ?? ""}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        p_user_id: "00000000-0000-0000-0000-000000000000",
+        p_email: "probe@dreamos86.local",
+      }),
+    },
+  );
+  if (ensureProbe.status === 404) {
+    missing.push({
+      type: "rpc",
+      rpc: "ensure_user_profile",
+      hint: "Apply supabase/migrations/20260602120000_runtime_profile_credit_publish_compat.sql",
+    });
   }
 
   return {

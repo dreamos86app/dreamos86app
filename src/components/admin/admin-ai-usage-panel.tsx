@@ -243,7 +243,9 @@ export function AdminAiUsagePanel() {
         </div>
         <div className="max-h-72 space-y-1 overflow-y-auto p-2">
           {events.length === 0 ? (
-            <p className="py-6 text-center text-[12px] text-muted-foreground">No events yet</p>
+            <p className="py-6 text-center text-[12px] text-muted-foreground">
+              No AI usage logged yet — run a successful discuss/build request.
+            </p>
           ) : (
             events.slice(0, 80).map((ev) => (
               <div

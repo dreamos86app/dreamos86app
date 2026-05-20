@@ -5,9 +5,9 @@ import { useChat } from "@ai-sdk/react";
 import type { UIMessage } from "ai";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Plus, Search, Send, Paperclip, Sparkles, X, AlertCircle,
+  Plus, Search, Send, Paperclip, X, AlertCircle,
   Loader2, Copy, Check, RotateCcw, MoreHorizontal,
-  Link2, HelpCircle, MessageSquare, Bot,
+  Link2, HelpCircle, MessageSquare, PanelLeft,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
@@ -29,7 +29,8 @@ import { runAiPreflightDeduped } from "@/lib/ai/preflight-inflight";
 import { isAiPreflightSuccess, preflightBlockedLabel } from "@/lib/ai/preflight-types";
 import { applyComposerPaste } from "@/lib/composer/textarea-handlers";
 import { composerTextareaClass } from "@/components/ui/composer-shell";
-import { LogoIcon } from "@/components/ui/logo-icon";
+import { DreamOS86BrandIcon } from "@/components/brand/dreamos86-brand-icon";
+import { DreamOS86BrandLockup } from "@/components/brand/dreamos86-brand-lockup";
 import { useHydrated } from "@/lib/hooks/use-hydrated";
 import { submitDebug, uiSubmitLog } from "@/lib/dev/submit-debug";
 import { useComposerClickCapture } from "@/lib/dev/composer-click-capture";
@@ -274,8 +275,8 @@ function MessageBubble({ msg, displayName, avatarUrl, attachments = [] }: {
             <Avatar src={avatarUrl} name={displayName} size="sm" />
           </div>
         ) : (
-          <motion.div className="flex size-8 shrink-0 items-center justify-center">
-            <LogoIcon size={28} />
+          <motion.div className="flex size-9 shrink-0 items-center justify-center">
+            <DreamOS86BrandIcon size={32} alt="DreamOS86" />
           </motion.div>
         )}
       </div>
@@ -373,6 +374,7 @@ export function ChatView() {
   const needsSignIn = sessionReady && !session?.user;
 
   const [activeConvId, setActiveConvId] = React.useState<string | null>(null);
+  const [mobileConvOpen, setMobileConvOpen] = React.useState(false);
   const [search, setSearch] = React.useState("");
   const [attachments, setAttachments] = React.useState<File[]>([]);
   const [tokenError, setTokenError] = React.useState(false);
@@ -842,15 +844,96 @@ export function ChatView() {
             href="/"
             className="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-[12px] font-medium text-white transition hover:bg-accent/90 active:scale-[0.98]"
           >
-            <LogoIcon size={14} />
+            <DreamOS86BrandIcon size={16} alt="" />
             Create a new app
           </Link>
         </div>
       </div>
 
+      {/* Mobile conversation sheet */}
+      <AnimatePresence>
+        {mobileConvOpen && (
+          <>
+            <motion.button
+              type="button"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[60] bg-black/50 lg:hidden"
+              aria-label="Close conversations"
+              onClick={() => setMobileConvOpen(false)}
+            />
+            <motion.div
+              initial={{ x: "-100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "-100%" }}
+              transition={{ type: "spring", damping: 28, stiffness: 320 }}
+              className="fixed inset-y-0 left-0 z-[61] flex w-[min(100%,280px)] flex-col border-r border-border bg-background shadow-xl lg:hidden"
+            >
+              <div className="flex items-center justify-between border-b border-border px-3 py-3">
+                <DreamOS86BrandLockup variant="drawer" href="/" onClick={() => setMobileConvOpen(false)} />
+                <button
+                  type="button"
+                  onClick={() => setMobileConvOpen(false)}
+                  className="rounded-lg p-1.5 text-muted-foreground hover:bg-surface"
+                >
+                  <X className="size-4" />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto py-1">
+                {filteredConvs.map((conv) => (
+                  <button
+                    key={conv.id}
+                    type="button"
+                    onClick={() => {
+                      setActiveConvId(conv.id);
+                      setMobileConvOpen(false);
+                    }}
+                    className={cn(
+                      "w-full px-3 py-2.5 text-left transition hover:bg-surface",
+                      activeConvId === conv.id && "bg-surface",
+                    )}
+                  >
+                    <p className="truncate text-[12.5px] font-medium text-foreground">{conv.title}</p>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">
+                      {conv.mode ? `${conv.mode} · ` : ""}
+                      {new Date(conv.updated_at).toLocaleDateString()}
+                    </p>
+                  </button>
+                ))}
+              </div>
+              <div className="border-t border-border p-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    startNewConversation();
+                    setMobileConvOpen(false);
+                  }}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-[12px] font-medium text-white"
+                >
+                  <Plus className="size-4" />
+                  New chat
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
       {/* Main chat area */}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border px-3 lg:hidden">
+        <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border px-3 safe-area-pad-x lg:hidden">
+          <button
+            type="button"
+            onClick={() => setMobileConvOpen(true)}
+            className="flex size-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground ring-1 ring-border transition hover:bg-surface hover:text-foreground"
+            title="Conversations"
+          >
+            <PanelLeft className="size-4" strokeWidth={1.75} />
+          </button>
+          <div className="min-w-0 flex-1">
+            <DreamOS86BrandLockup variant="drawer" href="/chat" showText />
+          </div>
           <button
             type="button"
             onClick={startNewConversation}
@@ -859,12 +942,11 @@ export function ChatView() {
           >
             <Plus className="size-4" strokeWidth={2} />
           </button>
-          <span className="text-[12px] font-medium text-foreground">New chat</span>
         </div>
         {/* Chat label bar */}
         <div className="flex h-10 shrink-0 flex-wrap items-center gap-2 border-b border-border px-4">
           <div className="flex items-center gap-1.5 rounded-full bg-muted/50 px-2.5 py-1 text-[11.5px] font-medium text-muted-foreground ring-1 ring-border/60">
-            <LogoIcon size={14} />
+            <DreamOS86BrandIcon size={18} alt="" />
             {freePlan ? "Discuss · automatic model" : "Discuss · choose model"}
           </div>
           {!freePlan && (
@@ -897,7 +979,7 @@ export function ChatView() {
                 className="flex flex-col items-center py-8 text-center sm:py-10"
               >
                 <div className="mb-4 flex size-14 items-center justify-center rounded-2xl bg-gradient-to-br from-accent/25 via-accent/15 to-violet-500/20 ring-1 ring-accent/25 shadow-[0_8px_28px_-12px_rgba(37,99,235,0.22)]">
-                  <LogoIcon size={40} />
+                  <DreamOS86BrandIcon size={44} alt="DreamOS86" />
                 </div>
                 <h2 className="text-[20px] font-semibold tracking-tight text-foreground">
                   How can I help?
@@ -952,7 +1034,7 @@ export function ChatView() {
             {isBusy && (
               <div className="flex gap-3">
                 <div className="flex size-7 shrink-0 items-center justify-center">
-                  <LogoIcon size={14} />
+                  <DreamOS86BrandIcon size={18} alt="" />
                 </div>
                 <div className="rounded-2xl rounded-tl-sm bg-surface px-4 py-3 ring-1 ring-border">
                   <div className="flex gap-1">

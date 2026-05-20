@@ -59,7 +59,12 @@ import { WorkspaceLauncher, type WorkspaceRightTab } from "@/components/create/w
 import { AppDashboardPanel } from "@/components/create/workspace/app-dashboard-panel";
 import { CodeExplorerPanel, type CodeExplorerFile } from "@/components/create/workspace/code-explorer-panel";
 import { findProjectConversationId } from "@/lib/projects/project-conversation";
-import { consumeAutostartHandoff } from "@/lib/create/autostart-handoff";
+import {
+  consumeAutostartHandoff,
+  seedPendingFromUrl,
+  shouldSkipDuplicateClientSubmit,
+} from "@/lib/create/autostart-handoff";
+import { pushRuntimeDiagnostic } from "@/lib/dev/runtime-diagnostics";
 import { reconcileProjectBuildState } from "@/lib/build/reconcile-project-build";
 import { resolveDisplayName } from "@/lib/profile-display";
 import { extractFencedCode, stripFencedCodeForChat, parseFencedFiles } from "@/lib/creation/extract-fenced-code";
@@ -276,6 +281,10 @@ export function ImmersiveWorkspace({
   type MobileCreatePanel = "chat" | WorkspaceRightTab;
   const [mobilePanel, setMobilePanel] = React.useState<MobileCreatePanel>("chat");
   const lastSubmitFingerprintRef = React.useRef<{ text: string; at: number } | null>(null);
+  const pendingOperationIdRef = React.useRef<string | null>(null);
+  const [dashboardSection, setDashboardSection] = React.useState<
+    "overview" | "screens" | "data" | "actions" | "integrations" | "domains" | "security" | "logs" | "settings" | "secrets"
+  >("overview");
   const [lastSubmitAt, setLastSubmitAt] = React.useState<number | null>(null);
   const [lastApiUrl, setLastApiUrl] = React.useState<string | null>(null);
   const [lastApiStatus, setLastApiStatus] = React.useState<string | null>(null);
@@ -356,6 +365,8 @@ export function ImmersiveWorkspace({
           editTarget: editTargetRef.current ?? undefined,
           projectId: projectIdRef.current ?? undefined,
           conversationId: conversationIdRef.current ?? undefined,
+          operationId: pendingOperationIdRef.current ?? undefined,
+          idempotencyKey: pendingOperationIdRef.current ?? undefined,
         }),
         on402: () => setCreditError(true),
         onSuccess: () => setCreditError(false),
@@ -732,16 +743,26 @@ export function ImmersiveWorkspace({
     }
 
     const now = Date.now();
+    if (shouldSkipDuplicateClientSubmit(text, mode, effectiveProjectId)) {
+      setSubmitStatusLabel("Skipped duplicate submit");
+      return;
+    }
+
     const prev = lastSubmitFingerprintRef.current;
-    if (prev && prev.text === text && now - prev.at < 2000) {
+    if (prev && prev.text === text && now - prev.at < 3000) {
+      pushRuntimeDiagnostic("prompt_submit_skipped_duplicate", { source, mode });
       setSubmitStatusLabel("Skipped duplicate submit");
       return;
     }
     lastSubmitFingerprintRef.current = { text, at: now };
 
-    if (source !== "url-auto" && messages.length === 0) {
+    const opId = pendingOperationIdRef.current ?? crypto.randomUUID();
+    pendingOperationIdRef.current = opId;
+    pushRuntimeDiagnostic("prompt_submit_started", { source, mode, operationId: opId });
+
+    if (messages.length === 0) {
       const userMsg: UIMessage = {
-        id: `pending-user-${Date.now()}`,
+        id: `pending-user-${opId}`,
         role: "user",
         parts: [{ type: "text", text }],
       };
@@ -913,26 +934,22 @@ export function ImmersiveWorkspace({
     if (!hydrated || !initialAutoStart || !initialPrompt.trim()) return;
     if (autostartConsumedRef.current || autoStartedRef.current) return;
 
+    seedPendingFromUrl(initialPrompt, mode);
     const handoff = consumeAutostartHandoff(initialPrompt, mode);
     if (!handoff) return;
 
     autostartConsumedRef.current = true;
     autoStartedRef.current = true;
+    pendingOperationIdRef.current = handoff.idempotencyKey;
     if (effectiveProjectId && uid) {
       convHydratedRef.current = `${effectiveProjectId}:${uid}`;
     }
 
-    const userMsg: UIMessage = {
-      id: `autostart-user-${handoff.idempotencyKey}`,
-      role: "user",
-      parts: [{ type: "text", text: handoff.prompt }],
-    };
-    setMessages([userMsg]);
     setMobilePanel("chat");
     setInput("");
     cleanAutostartUrl();
 
-    void runSubmitRef.current("url-auto", handoff.prompt).catch(() => {
+    void runSubmitRef.current("url-auto", handoff.text).catch(() => {
       autoStartedRef.current = false;
       autostartConsumedRef.current = false;
       setAutoStartFailed("Could not start the build automatically. Check your connection and try again.");
@@ -1073,8 +1090,21 @@ export function ImmersiveWorkspace({
         isBusy={isBusy}
         planId={profile?.plan_id}
         onRightTab={setRightTab}
-        onAppSection={() => {
-          /* menu item ids logged via toast in launcher for future routes */
+        onAppSection={(section) => {
+          const map: Record<string, typeof dashboardSection> = {
+            preview: "overview",
+            dashboard: "overview",
+            settings: "settings",
+            domains: "domains",
+            integrations: "integrations",
+            secrets: "secrets",
+            logs: "logs",
+            publish: "overview",
+          };
+          const target = map[section] ?? "overview";
+          setDashboardSection(target);
+          setRightTab("dashboard");
+          setMobilePanel("dashboard");
         }}
       />
 
@@ -1176,17 +1206,19 @@ export function ImmersiveWorkspace({
                 />
               )}
 
-              {isBusy && (
-                <BuildStatusNarrator
-                  isStreaming={isBusy}
-                  qualityRepairing={qualityRepairing}
-                  activeStep={taskProgressIndex(
-                    lastAssistantText.length,
-                    parseBuildPlanCard(lastAssistantText).taskLabels.length || 6,
-                  )}
-                  className="mt-1"
-                />
-              )}
+              {isBusy &&
+                messages[messages.length - 1]?.role === "user" &&
+                mode === "build" && (
+                  <BuildStatusNarrator
+                    isStreaming={isBusy}
+                    qualityRepairing={qualityRepairing}
+                    activeStep={taskProgressIndex(
+                      lastAssistantText.length,
+                      parseBuildPlanCard(lastAssistantText).taskLabels.length || 6,
+                    )}
+                    className="mt-1"
+                  />
+                )}
 
               {creditError && (
                 <div className="overflow-hidden rounded-xl bg-gradient-to-br from-background via-surface to-background shadow-[0_4px_16px_-4px_rgba(0,0,0,0.3)] ring-1 ring-border/80">
@@ -1518,6 +1550,8 @@ export function ImmersiveWorkspace({
                 project={effectiveProject}
                 isBusy={isBusy}
                 refreshKey={projectDataRefresh}
+                activeSection={dashboardSection}
+                onSectionChange={setDashboardSection}
               />
             )}
             {rightTab === "code" && (

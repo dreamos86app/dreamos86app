@@ -474,9 +474,7 @@ export function WorkspaceLauncher({
       onAppSection(id);
       return;
     }
-    toast.info(
-      "Coming soon — needs app management APIs wired to Supabase (domains, integrations, secrets, logs).",
-    );
+    onRightTab("dashboard");
     onAppSection(id);
   }
 

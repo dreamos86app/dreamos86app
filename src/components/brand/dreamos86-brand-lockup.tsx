@@ -10,11 +10,11 @@ const VARIANT_STYLES: Record<
   DreamOS86BrandLockupVariant,
   { icon: number; text: string }
 > = {
-  header: { icon: 26, text: "text-[13px] sm:text-[14px]" },
-  sidebar: { icon: 26, text: "text-[13.5px]" },
-  drawer: { icon: 28, text: "text-[14px]" },
+  header: { icon: 30, text: "text-[13px] sm:text-[14px]" },
+  sidebar: { icon: 28, text: "text-[13.5px]" },
+  drawer: { icon: 30, text: "text-[14px]" },
   footer: { icon: 24, text: "text-[13px]" },
-  auth: { icon: 40, text: "text-[17px]" },
+  auth: { icon: 44, text: "text-[17px]" },
 };
 
 const SIZE_ICON: Record<DreamOS86BrandLockupSize, number> = {
@@ -60,6 +60,7 @@ export function DreamOS86BrandLockup({
           className={cn(
             "truncate font-semibold tracking-[-0.03em] text-foreground",
             styles.text,
+            variant === "auth" && "-ml-1.5",
           )}
         >
           DreamOS86
@@ -70,7 +71,7 @@ export function DreamOS86BrandLockup({
 
   const rootClass = cn(
     "flex min-w-0 shrink items-center",
-    compact || variant === "auth" ? "gap-1.5" : "gap-1",
+    variant === "auth" ? "gap-0.5" : "gap-1",
     gapClassName,
     className,
   );

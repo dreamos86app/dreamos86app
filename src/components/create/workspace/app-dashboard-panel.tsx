@@ -78,13 +78,26 @@ export function AppDashboardPanel({
   project,
   isBusy,
   refreshKey = 0,
+  activeSection,
+  onSectionChange,
 }: {
   project: ProjectRow | null;
   isBusy: boolean;
   refreshKey?: number;
+  activeSection?: DashSection;
+  onSectionChange?: (section: DashSection) => void;
 }) {
   const supabase = React.useMemo(() => createClient(), []);
-  const [section, setSection] = React.useState<DashSection>("overview");
+  const [internalSection, setInternalSection] = React.useState<DashSection>("overview");
+  const section = activeSection ?? internalSection;
+  const setSection = (s: DashSection) => {
+    if (onSectionChange) onSectionChange(s);
+    else setInternalSection(s);
+  };
+
+  React.useEffect(() => {
+    if (activeSection) setInternalSection(activeSection);
+  }, [activeSection]);
   const [filePaths, setFilePaths] = React.useState<string[]>([]);
   const [filesLoading, setFilesLoading] = React.useState(false);
   const [buildStatus, setBuildStatus] = React.useState<string | null>(null);

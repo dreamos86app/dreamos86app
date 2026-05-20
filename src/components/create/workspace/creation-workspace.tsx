@@ -697,7 +697,9 @@ export function CreationWorkspace({
             </div>
 
             {/* Live build status */}
-            {isBusy && <BuildStatusNarrator isStreaming={isBusy} className="mt-1" />}
+            {isBusy && messages[messages.length - 1]?.role === "user" && (
+              <BuildStatusNarrator isStreaming={isBusy} className="mt-1" />
+            )}
 
             {/* Out-of-credits upgrade card */}
             {creditError && (

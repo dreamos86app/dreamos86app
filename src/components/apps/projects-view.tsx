@@ -41,7 +41,13 @@ function ProjectCard({ project }: { project: Project }) {
   const shortDesc =
     (project as Project & { short_description?: string }).short_description ||
     project.description;
-  const iconSrc = project.icon_url ?? `/api/projects/${project.id}/icon`;
+  const iconSvg =
+    typeof (project as Project & { icon_svg?: string }).icon_svg === "string"
+      ? (project as Project & { icon_svg: string }).icon_svg
+      : null;
+  const iconSrc = iconSvg
+    ? `data:image/svg+xml,${encodeURIComponent(iconSvg)}`
+    : project.icon_url ?? `/api/projects/${project.id}/icon`;
   const buildStatus =
     typeof meta.build_status === "string" ? meta.build_status : project.status;
 
@@ -156,7 +162,9 @@ export function ProjectsView() {
     setLoading(true);
     supabase
       .from("projects")
-      .select("*")
+      .select(
+        "*, app_name, short_description, category, icon_svg, build_status, icon_url",
+      )
       .eq("owner_id", profile.id)
       .order("updated_at", { ascending: false })
       .then(({ data }) => {

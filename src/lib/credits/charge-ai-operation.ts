@@ -34,6 +34,15 @@ function logCredits(level: "info" | "warn", msg: string, extra?: Record<string, 
   else console.info(line, extra ?? "");
 }
 
+async function fetchProfileBalance(writer: Writer, userId: string): Promise<number | null> {
+  const { data } = await writer
+    .from("profiles")
+    .select("credits_remaining")
+    .eq("id", userId)
+    .maybeSingle();
+  return typeof data?.credits_remaining === "number" ? data.credits_remaining : null;
+}
+
 /**
  * Server-authoritative credit charge after successful AI work.
  * Uses charge_tokens RPC (idempotent via operation_id / idempotency_key).
@@ -109,15 +118,22 @@ export async function chargeAiOperation(
     idempotent?: boolean;
   } | null;
 
-  const charged = Boolean(creditResult?.ok ?? creditResult?.success);
-  const remaining =
+  const rpcOk = Boolean(creditResult?.ok ?? creditResult?.success ?? creditResult?.charged);
+  const idempotent = Boolean(creditResult?.idempotent);
+  let remaining =
     typeof creditResult?.balance_after === "number"
       ? creditResult.balance_after
       : typeof creditResult?.remaining === "number"
         ? creditResult.remaining
         : null;
 
-  if (charged && !creditResult?.idempotent) {
+  if (remaining == null && (rpcOk || idempotent)) {
+    remaining = await fetchProfileBalance(writer, input.userId);
+  }
+
+  const charged = rpcOk && !idempotent;
+
+  if (charged) {
     const usageRow: Record<string, unknown> = {
       user_id: input.userId,
       user_email: input.userEmail,
@@ -161,12 +177,14 @@ export async function chargeAiOperation(
     }
 
     logCredits("info", "charge ok", {
-      idempotent: creditResult?.idempotent,
       balance_after: remaining,
       operation_id: input.operationId,
     });
-  } else if (creditResult?.idempotent) {
-    logCredits("info", "charge skipped reason", { reason: "idempotent", operation_id: input.operationId });
+  } else if (idempotent) {
+    logCredits("info", "charge skipped idempotent", {
+      balance_after: remaining,
+      operation_id: input.operationId,
+    });
   } else {
     logCredits("warn", "charge failed", {
       error: creditResult?.error ?? "not_charged",
@@ -175,9 +193,9 @@ export async function chargeAiOperation(
   }
 
   return {
-    charged: charged && !creditResult?.idempotent,
+    charged,
     remaining,
-    error: charged ? null : (creditResult?.error ?? "charge_failed"),
-    idempotent: creditResult?.idempotent,
+    error: charged || idempotent ? null : (creditResult?.error ?? "charge_failed"),
+    idempotent,
   };
 }

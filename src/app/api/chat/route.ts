@@ -31,6 +31,11 @@ import { runBuildQualityRepair } from "@/lib/build/quality-repair";
 import { ensureProjectConversation } from "@/lib/projects/project-conversation";
 import { loadProjectContextBlock, refineAppName } from "@/lib/projects/project-context";
 import {
+  hasRecentRunningBuildJob,
+  hasSuccessfulChargeForOperation,
+  hasUserMessageForOperation,
+} from "@/lib/chat/server-idempotency";
+import {
   classifyBuildIntent,
   shouldStartBuildPipeline,
 } from "@/lib/ai/build-intent-classifier";
@@ -207,6 +212,8 @@ export async function POST(request: Request) {
     editTarget?: string | null;
     projectId?: string;
     attachmentIds?: unknown;
+    operationId?: string;
+    idempotencyKey?: string;
   };
 
   try {
@@ -406,8 +413,21 @@ export async function POST(request: Request) {
     });
   }
 
+  const clientOpId =
+    typeof raw.operationId === "string" && raw.operationId.length > 0
+      ? raw.operationId
+      : typeof raw.idempotencyKey === "string" && raw.idempotencyKey.length > 0
+        ? raw.idempotencyKey
+        : null;
+
+  let opId =
+    clientOpId ??
+    `chat:${user.id}:${conversationId ?? "new"}:${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
   let buildJobId: string | null = null;
   if (startBuildPipeline && projectId && userText) {
+    const dupBuild = await hasRecentRunningBuildJob(writer, projectId, userText);
+    if (!dupBuild) {
     await writer
       .from("projects")
       .update({ build_status: "building" } as never)
@@ -435,13 +455,19 @@ export async function POST(request: Request) {
       .select("id")
       .single();
     buildJobId = bj?.id ?? null;
+    if (buildJobId && !clientOpId) {
+      opId = `build:${user.id}:${projectId}:${buildJobId}`;
+    }
     if (bjErr && process.env.NODE_ENV !== "production") {
       console.warn("[chat] build_jobs insert:", bjErr.message);
+    }
     }
   }
 
   let userMessageId: string | null = null;
   if (conversationId && userText) {
+    const dupMsg = await hasUserMessageForOperation(writer, conversationId, opId);
+    if (!dupMsg) {
     const { data: userMsg, error: insUserErr } = await writer
       .from("messages")
       .insert({
@@ -452,6 +478,7 @@ export async function POST(request: Request) {
         credits_used: 0,
         model_id: modelId,
         attachments: attachmentsJson,
+        metadata: { operation_id: opId, mode } as never,
       })
       .select("id")
       .single();
@@ -460,12 +487,16 @@ export async function POST(request: Request) {
       console.warn("[chat] user message insert:", insUserErr.message);
     }
     userMessageId = userMsg?.id ?? null;
+    if (userMessageId && !clientOpId && conversationId) {
+      opId = `ai:${user.id}:${conversationId}:${userMessageId}`;
+    }
 
     if (userMessageId && attachmentIds.length > 0) {
       await writer
         .from("message_attachments")
         .update({ message_id: userMessageId, conversation_id: conversationId })
         .in("id", attachmentIds);
+    }
     }
   }
 
@@ -487,12 +518,6 @@ export async function POST(request: Request) {
     projectMemoryBlock: memoryBlock,
     hasProject: !!projectId,
   });
-
-  const opId = buildJobId
-    ? `build:${user.id}:${projectId}:${buildJobId}`
-    : conversationId
-      ? `ai:${user.id}:${conversationId}:${userMessageId ?? Date.now()}`
-      : `chat_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 
   let model;
   try {
@@ -728,7 +753,9 @@ export async function POST(request: Request) {
         let charged = false;
         let chargeError: string | null = null;
 
-        if (shouldCharge) {
+        const alreadyCharged = await hasSuccessfulChargeForOperation(writer, user.id, opId);
+
+        if (shouldCharge && !alreadyCharged) {
           const chargeCalc = calculateCreditsToCharge({
             modelId: billedModelId,
             mode: chargeMode,
@@ -738,14 +765,13 @@ export async function POST(request: Request) {
           });
           const creditsToCharge = chargeCalc.creditsToCharge;
 
-          if (process.env.NODE_ENV !== "production") {
-            console.info("[credits] operation_id", opId);
-            console.info("[credits] provider", routed.provider);
-            console.info("[credits] model", billedModelId);
-            console.info("[credits] mode", mode);
-            console.info("[credits] estimated_provider_cost", chargeCalc.estimatedProviderCostUsd);
-            console.info("[credits] charged_credits", creditsToCharge);
-          }
+          console.info("[credits] charge start", {
+            operation_id: opId,
+            provider: routed.provider,
+            model: billedModelId,
+            mode: chargeMode,
+            credits: creditsToCharge,
+          });
 
           const charge = await chargeAiOperation(writer, {
             userId: user.id,
@@ -765,6 +791,13 @@ export async function POST(request: Request) {
           });
           charged = charge.charged;
           chargeError = charge.error ?? null;
+          if (charge.charged) {
+            console.info("[credits] charge ok", { operation_id: opId, remaining: charge.remaining });
+          } else if (charge.idempotent) {
+            console.info("[credits] charge skipped idempotent", { operation_id: opId });
+          } else {
+            console.warn("[credits] charge failed", { operation_id: opId, error: chargeError });
+          }
 
           if (charged && mode === "build" && buildJobId && projectId && savedFileCount > 0) {
             await writer
@@ -804,21 +837,26 @@ export async function POST(request: Request) {
           } else if (!charged && process.env.NODE_ENV !== "production") {
             console.warn("[chat] charge after save:", chargeError);
           }
-        } else {
-          await writer.from("ai_usage_logs").insert({
-            user_id: user.id,
-            user_email: userEmail,
-            model_id: billedModelId,
-            mode,
-            tokens_charged: 0,
-            status: "error",
-            error_message:
-              buildFailureReason ??
-              (mode === "build" ? "Build output not saved — no credits charged" : "No charge — output not saved"),
-            conversation_id: conversationId ?? null,
-            operation_id: opId,
-            project_id: projectId ?? null,
-          } as never);
+        } else if (!alreadyCharged && outputSaved && event.text?.trim()) {
+          const skipReason = buildFailureReason
+            ? buildFailureReason
+            : mode === "build" && savedFileCount === 0
+              ? "Build output not saved — no credits charged"
+              : "No charge — skipped";
+          if (skipReason.includes("not saved") || skipReason.includes("Build output")) {
+            await writer.from("ai_usage_logs").insert({
+              user_id: user.id,
+              user_email: userEmail,
+              model_id: billedModelId,
+              mode: chargeMode,
+              tokens_charged: 0,
+              status: "skipped",
+              error_message: skipReason,
+              conversation_id: conversationId ?? null,
+              operation_id: opId,
+              project_id: projectId ?? null,
+            } as never);
+          }
         }
 
         if (buildJobId && mode === "build" && !buildQualityOk) {
