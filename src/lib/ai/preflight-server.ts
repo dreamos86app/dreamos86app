@@ -8,7 +8,10 @@ import { hasAnyLlmProviderKey } from "@/lib/llm/env-keys";
 import { loadProfileBillingRow } from "@/lib/supabase/load-profile-billing";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceRoleClient } from "@/lib/supabase/admin";
-import { isPostgrestSchemaOrMissingTableError } from "@/lib/supabase/schema-errors";
+import {
+  isOptionalProfileSchemaError,
+  isPostgrestSchemaOrMissingTableError,
+} from "@/lib/supabase/schema-errors";
 import type { AiPreflightMode } from "@/lib/ai/preflight-types";
 
 const DEFAULT_MODEL_ID = "claude-sonnet-4-6";
@@ -175,15 +178,18 @@ export async function runAiPreflightServer(request: Request): Promise<PreflightS
     await bootstrapProfileFromOAuth(user, null);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "profile_bootstrap_failed";
-    return {
-      ok: false,
-      status: 503,
-      error: "Account profile unavailable",
-      code: "profile_unavailable",
-      hint: isPostgrestSchemaOrMissingTableError(msg)
-        ? `public.profiles — ${msg}. Run Supabase migrations and reload schema.`
-        : msg,
-    };
+    if (!isPostgrestSchemaOrMissingTableError(msg) && !isOptionalProfileSchemaError(msg)) {
+      return {
+        ok: false,
+        status: 503,
+        error: "Account profile unavailable",
+        code: "profile_unavailable",
+        hint: msg,
+      };
+    }
+    if (process.env.NODE_ENV !== "production") {
+      console.warn("[preflight] bootstrap degraded, continuing:", msg);
+    }
   }
 
   const { row: billingRow, hint: billingHint } = await loadProfileBillingRow(supabase, user);

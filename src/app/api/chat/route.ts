@@ -259,6 +259,9 @@ export async function POST(request: Request) {
       { status: 503 },
     );
   }
+  if (billingHint && process.env.NODE_ENV !== "production") {
+    console.warn("[chat] profile billing degraded:", billingHint);
+  }
 
   await ensureUserProfileServer(user.id, user.email ?? null);
 

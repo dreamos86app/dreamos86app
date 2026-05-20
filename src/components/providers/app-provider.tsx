@@ -25,6 +25,8 @@ import {
   invalidateBootstrapCache,
   setCachedBootstrap,
 } from "@/lib/cache/session-bootstrap-cache";
+import { loadUserProfileCore } from "@/lib/supabase/load-user-profile";
+import type { Profile } from "@/lib/supabase/types";
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -88,36 +90,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      let { data: profile } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", userId)
-        .maybeSingle();
+      let { profile: coreProfile } = await loadUserProfileCore(supabase, userId);
 
-      if (!profile && typeof fetch !== "undefined") {
+      if (!coreProfile && typeof fetch !== "undefined") {
         try {
           const res = await fetch("/api/profile/ensure", {
             method: "POST",
             credentials: "include",
           });
           if (res.ok) {
-            const payload = (await res.json()) as { profile?: typeof profile };
-            if (payload.profile) profile = payload.profile;
+            const payload = (await res.json()) as { profile?: Partial<Profile> };
+            if (payload.profile) coreProfile = payload.profile;
           }
         } catch {
           /* ignore — user may retry on refresh */
         }
-        if (!profile) {
-          const retry = await supabase
-            .from("profiles")
-            .select("*")
-            .eq("id", userId)
-            .maybeSingle();
-          profile = retry.data ?? null;
+        if (!coreProfile) {
+          const retry = await loadUserProfileCore(supabase, userId);
+          coreProfile = retry.profile;
         }
       }
 
-      if (profile) {
+      if (coreProfile) {
+        const profile = coreProfile as Profile;
         setProfile(profile);
         // Set credits from profile immediately so we never flash 0.
         // `setCredits` marks the store as `isConfirmed = true`, preventing

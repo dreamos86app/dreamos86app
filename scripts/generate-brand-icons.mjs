@@ -117,15 +117,33 @@ async function resolveMasterSource() {
 
 const TRANSPARENT_BG = { r: 0, g: 0, b: 0, alpha: 0 };
 
-/** Resize PNG with transparent letterbox only (alpha 0 background in canvas). */
-async function resizeTransparentPng(input, size, output) {
-  await sharp(input)
+/** Cloud fill ratio inside square canvas (86–92% visible area). */
+const ICON_FILL_RATIO = 0.89;
+
+/**
+ * Resize PNG on transparent canvas — icon scaled up (no matte, no background shape).
+ */
+async function resizeTransparentPng(input, size, output, fillRatio = ICON_FILL_RATIO) {
+  const inner = Math.max(8, Math.round(size * fillRatio));
+  const iconBuf = await sharp(input)
     .ensureAlpha()
-    .resize(size, size, {
+    .resize(inner, inner, {
       fit: "contain",
       background: TRANSPARENT_BG,
       kernel: sharp.kernel.lanczos3,
     })
+    .png({ force: true })
+    .toBuffer();
+
+  await sharp({
+    create: {
+      width: size,
+      height: size,
+      channels: 4,
+      background: TRANSPARENT_BG,
+    },
+  })
+    .composite([{ input: iconBuf, gravity: "center" }])
     .png({ compressionLevel: 9, adaptiveFiltering: true, force: true })
     .toFile(output);
 }
@@ -161,17 +179,29 @@ async function writeMaskableIcon(input, canvasSize, output) {
 async function writeFaviconIco(pngSourcePath) {
   const sizes = [16, 32, 48];
   const pngBuffers = await Promise.all(
-    sizes.map((size) =>
-      sharp(pngSourcePath)
+    sizes.map(async (size) => {
+      const inner = Math.max(8, Math.round(size * ICON_FILL_RATIO));
+      const iconBuf = await sharp(pngSourcePath)
         .ensureAlpha()
-        .resize(size, size, {
+        .resize(inner, inner, {
           fit: "contain",
           background: TRANSPARENT_BG,
           kernel: sharp.kernel.lanczos3,
         })
         .png({ force: true })
-        .toBuffer(),
-    ),
+        .toBuffer();
+      return sharp({
+        create: {
+          width: size,
+          height: size,
+          channels: 4,
+          background: TRANSPARENT_BG,
+        },
+      })
+        .composite([{ input: iconBuf, gravity: "center" }])
+        .png({ force: true })
+        .toBuffer();
+    }),
   );
 
   const ico = await pngToIco(pngBuffers);

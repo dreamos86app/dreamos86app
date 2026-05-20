@@ -4,6 +4,11 @@ import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import { bootstrapProfileFromOAuth } from "@/lib/auth/profile-bootstrap";
 import { ensureUserProfileServer } from "@/lib/auth/ensure-user-profile-server";
 import { isPostgrestSchemaOrMissingTableError } from "@/lib/supabase/schema-errors";
+import {
+  loadProfileOptionalFields,
+  loadUserProfileCore,
+  PROFILE_REQUIRED_SELECT,
+} from "@/lib/supabase/load-user-profile";
 
 /**
  * Ensures a `public.profiles` row exists for the signed-in user (service role).
@@ -43,24 +48,33 @@ export async function POST() {
 
   try {
     const admin = createSupabaseAdmin();
-    const { data: profile, error } = await admin
-      .from("profiles")
-      .select("*")
-      .eq("id", user.id)
-      .maybeSingle();
-    if (error) {
-      return NextResponse.json(
-        {
-          error: "Could not load profile",
-          hint: error.message,
-          code: isPostgrestSchemaOrMissingTableError(error.message)
-            ? "schema_error"
-            : "profile_read_failed",
-        },
-        { status: 500 },
-      );
+    const { profile: core, schemaDegraded } = await loadUserProfileCore(admin, user.id);
+    if (!core) {
+      const { data, error } = await admin
+        .from("profiles")
+        .select(PROFILE_REQUIRED_SELECT)
+        .eq("id", user.id)
+        .maybeSingle();
+      if (error) {
+        return NextResponse.json(
+          {
+            error: "Could not load profile",
+            hint: error.message,
+            code: isPostgrestSchemaOrMissingTableError(error.message)
+              ? "schema_error"
+              : "profile_read_failed",
+          },
+          { status: 500 },
+        );
+      }
+      const optional = await loadProfileOptionalFields(admin, user.id);
+      const row = data as Record<string, unknown> | null;
+      return NextResponse.json({
+        profile: row ? { ...row, ...optional } : null,
+        schemaDegraded,
+      });
     }
-    return NextResponse.json({ profile: profile ?? null });
+    return NextResponse.json({ profile: core, schemaDegraded });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "admin_unavailable";
     return NextResponse.json(

@@ -43,7 +43,7 @@ const geistMono = Geist_Mono({
 
 const SITE_URL = getSiteUrl();
 
-const ICON_V = "11";
+const ICON_V = "12";
 
 
 

@@ -4,6 +4,7 @@ export function isPostgrestSchemaOrMissingTableError(message: string): boolean {
   return (
     m.includes("schema cache") ||
     m.includes("could not find the table") ||
+    m.includes("pgrst204") ||
     (m.includes("relation") && m.includes("does not exist"))
   );
 }
@@ -16,4 +17,16 @@ export function parseMissingProfileColumn(message: string): string | null {
 
 export function isMissingProfileColumnError(message: string): boolean {
   return parseMissingProfileColumn(message) !== null;
+}
+
+/** Optional billing/profile columns missing from PostgREST — must not block Create. */
+export function isOptionalProfileSchemaError(message: string): boolean {
+  const m = message.toLowerCase();
+  return (
+    isPostgrestSchemaOrMissingTableError(message) ||
+    isMissingProfileColumnError(message) ||
+    m.includes("pgrst204") ||
+    (m.includes("column") && m.includes("does not exist")) ||
+    (m.includes("column") && m.includes("profiles"))
+  );
 }
