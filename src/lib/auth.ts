@@ -81,8 +81,8 @@ const ERROR_MAP: Array<[RegExp, string]> = [
     "Please verify your email before signing in. Check your inbox.",
   ],
   [
-    /user already registered|already been registered|user_already_exists/i,
-    "An account with this email exists. Try signing in instead.",
+    /user already registered|already been registered|user_already_exists|email_exists|already exists|duplicate user|signups not allowed/i,
+    "Account already exists. Log in with this email instead.",
   ],
   [
     /password should be at least|password must be/i,

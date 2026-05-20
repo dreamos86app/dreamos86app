@@ -23,6 +23,7 @@ const ASSETS_DIR = path.join(
 const MASTER_CANDIDATES = [
   path.join(BRAND_DIR, "dreamos86-master-source.png"),
   path.join(BRAND_DIR, "dreamos86-icon-transparent.png"),
+  path.join(ROOT, "public/icon.png"),
 ];
 
 const CANONICAL_ICON = path.join(BRAND_DIR, "dreamos86-icon.png");
@@ -49,6 +50,11 @@ const PNG_SIZES = [
 const BRAND_SIZES = [
   { file: "dreamos86-icon-192.png", size: 192 },
   { file: "dreamos86-icon-512.png", size: 512 },
+];
+
+const FAVICON_ICO_PATHS = [
+  path.join(PUBLIC_DIR, "favicon.ico"),
+  path.join(APP_DIR, "favicon.ico"),
 ];
 
 async function exists(p) {
@@ -109,13 +115,15 @@ async function resolveMasterSource() {
   return null;
 }
 
+const TRANSPARENT_BG = { r: 0, g: 0, b: 0, alpha: 0 };
+
 /** Resize PNG with transparent letterbox only (alpha 0 background in canvas). */
 async function resizeTransparentPng(input, size, output) {
   await sharp(input)
     .ensureAlpha()
     .resize(size, size, {
       fit: "contain",
-      background: { r: 0, g: 0, b: 0, alpha: 0 },
+      background: TRANSPARENT_BG,
       kernel: sharp.kernel.lanczos3,
     })
     .png({ compressionLevel: 9, adaptiveFiltering: true, force: true })
@@ -130,7 +138,7 @@ async function writeMaskableIcon(input, canvasSize, output) {
     .ensureAlpha()
     .resize(iconSize, iconSize, {
       fit: "contain",
-      background: { r: 0, g: 0, b: 0, alpha: 0 },
+      background: TRANSPARENT_BG,
       kernel: sharp.kernel.lanczos3,
     })
     .png({ force: true })
@@ -141,7 +149,7 @@ async function writeMaskableIcon(input, canvasSize, output) {
       width: canvasSize,
       height: canvasSize,
       channels: 4,
-      background: { r: 0, g: 0, b: 0, alpha: 0 },
+      background: TRANSPARENT_BG,
     },
   })
     .composite([{ input: iconBuf, left: offset, top: offset }])
@@ -149,8 +157,36 @@ async function writeMaskableIcon(input, canvasSize, output) {
     .toFile(output);
 }
 
-async function copyMasterUnmodified(master, dest) {
-  await fs.copyFile(master, dest);
+/** Build favicon.ico from the same 32px PNG used for /icon.png (DreamOS86 cloud, not Vercel). */
+async function writeFaviconIco(pngSourcePath) {
+  const sizes = [16, 32, 48];
+  const pngBuffers = await Promise.all(
+    sizes.map((size) =>
+      sharp(pngSourcePath)
+        .ensureAlpha()
+        .resize(size, size, {
+          fit: "contain",
+          background: TRANSPARENT_BG,
+          kernel: sharp.kernel.lanczos3,
+        })
+        .png({ force: true })
+        .toBuffer(),
+    ),
+  );
+
+  const ico = await pngToIco(pngBuffers);
+  for (const dest of FAVICON_ICO_PATHS) {
+    await fs.writeFile(dest, ico);
+    console.log("  wrote", path.relative(ROOT, dest), `(${ico.length} bytes)`);
+  }
+}
+
+async function writeCanonicalBrandPngs(master) {
+  const meta = await sharp(master).metadata();
+  const dim = Math.max(meta.width ?? 512, meta.height ?? 512, 512);
+  await resizeTransparentPng(master, dim, CANONICAL_ICON);
+  await resizeTransparentPng(master, dim, CANONICAL_TRANSPARENT);
+  console.log(`  wrote brand/dreamos86-icon.png (${dim}x${dim}, alpha)`);
 }
 
 async function main() {
@@ -165,9 +201,8 @@ async function main() {
   await fs.mkdir(BRAND_DIR, { recursive: true });
   console.log("[generate-brand-icons] Master:", path.basename(master));
 
-  await copyMasterUnmodified(master, path.join(BRAND_DIR, "dreamos86-master-source.png"));
-  await copyMasterUnmodified(master, CANONICAL_ICON);
-  await copyMasterUnmodified(master, CANONICAL_TRANSPARENT);
+  await fs.copyFile(master, path.join(BRAND_DIR, "dreamos86-master-source.png"));
+  await writeCanonicalBrandPngs(master);
 
   for (const { file, size } of BRAND_SIZES) {
     await resizeTransparentPng(master, size, path.join(BRAND_DIR, file));
@@ -182,29 +217,16 @@ async function main() {
   await writeMaskableIcon(master, 512, MASKABLE_OUT);
   console.log("  wrote brand/dreamos86-icon-maskable.png (maskable only)");
 
-  const ico16 = await sharp(master)
-    .ensureAlpha()
-    .resize(16, 16, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
-    .png({ force: true })
-    .toBuffer();
-  const ico32 = await sharp(master)
-    .ensureAlpha()
-    .resize(32, 32, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
-    .png({ force: true })
-    .toBuffer();
-  const ico48 = await sharp(master)
-    .ensureAlpha()
-    .resize(48, 48, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
-    .png({ force: true })
-    .toBuffer();
-  await fs.writeFile(path.join(PUBLIC_DIR, "favicon.ico"), await pngToIco([ico16, ico32, ico48]));
-  console.log("  wrote favicon.ico");
-
+  const iconPng = path.join(PUBLIC_DIR, "icon.png");
+  await resizeTransparentPng(master, 32, iconPng);
   await resizeTransparentPng(master, 32, path.join(APP_DIR, "icon.png"));
   await resizeTransparentPng(master, 180, path.join(APP_DIR, "apple-icon.png"));
-  await resizeTransparentPng(master, 32, path.join(PUBLIC_DIR, "icon.png"));
+  await resizeTransparentPng(master, 180, path.join(PUBLIC_DIR, "apple-touch-icon.png"));
 
-  console.log("[generate-brand-icons] Done — alpha preserved, no matte stripping.");
+  console.log("  generating favicon.ico from public/icon.png …");
+  await writeFaviconIco(iconPng);
+
+  console.log("[generate-brand-icons] Done — alpha preserved; favicon.ico written to public/ and src/app/");
 }
 
 main().catch((err) => {

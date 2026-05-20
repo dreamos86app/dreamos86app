@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 
 /** Canonical transparent DreamOS86 platform mark (not user/project app icons). */
-export const DREAMOS86_BRAND_ICON_VERSION = "6";
+export const DREAMOS86_BRAND_ICON_VERSION = "11";
 export const DREAMOS86_BRAND_ICON_SRC = `/brand/dreamos86-icon.png?v=${DREAMOS86_BRAND_ICON_VERSION}`;
 
 export type DreamOS86BrandIconProps = {

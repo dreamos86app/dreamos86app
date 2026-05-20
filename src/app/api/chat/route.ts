@@ -30,6 +30,11 @@ import { finalizeBuildSuccess, finalizeBuildFailed } from "@/lib/build/finalize-
 import { runBuildQualityRepair } from "@/lib/build/quality-repair";
 import { ensureProjectConversation } from "@/lib/projects/project-conversation";
 import { loadProjectContextBlock, refineAppName } from "@/lib/projects/project-context";
+import {
+  classifyBuildIntent,
+  shouldStartBuildPipeline,
+} from "@/lib/ai/build-intent-classifier";
+import { ensureUserProfileServer } from "@/lib/auth/ensure-user-profile-server";
 
 const MODEL_ID_MAP: Record<string, string> = {
   "claude-opus-4-7": "claude-opus-4-5",
@@ -255,7 +260,25 @@ export async function POST(request: Request) {
     );
   }
 
+  await ensureUserProfileServer(user.id, user.email ?? null);
+
   const profileRow = billingRow;
+
+  const userTextEarly = lastUserText(uiMessages);
+  const buildIntent =
+    mode === "build" && userTextEarly ? classifyBuildIntent(userTextEarly) : null;
+  const startBuildPipeline = shouldStartBuildPipeline(mode, buildIntent);
+  const chargeMode: "discuss" | "edit" | "build" =
+    mode === "build" && !startBuildPipeline ? "discuss" : mode;
+
+  if (buildIntent && process.env.NODE_ENV !== "production") {
+    console.info("[build-intent]", {
+      intent: buildIntent.intent,
+      confidence: buildIntent.confidence,
+      reason: buildIntent.reason,
+      startBuildPipeline,
+    });
+  }
 
   const freePlan = planIsFree(profileRow.plan_id as string | undefined);
   const requestedModel =
@@ -328,7 +351,7 @@ export async function POST(request: Request) {
   modelMessages = appendFileLinks(modelMessages, fileLinks);
   modelMessages = injectUserImages(modelMessages, imageUrls);
 
-  const tokensNeeded = calculateTokens(modelId, mode);
+  const tokensNeeded = calculateTokens(modelId, chargeMode);
   const balance = profileRow.credits_remaining;
 
   if (balance < tokensNeeded) {
@@ -381,7 +404,13 @@ export async function POST(request: Request) {
   }
 
   let buildJobId: string | null = null;
-  if (mode === "build" && projectId && userText) {
+  if (startBuildPipeline && projectId && userText) {
+    await writer
+      .from("projects")
+      .update({ build_status: "building" } as never)
+      .eq("id", projectId)
+      .eq("owner_id", user.id);
+
     const { data: bj, error: bjErr } = await writer
       .from("build_jobs")
       .insert({
@@ -389,10 +418,16 @@ export async function POST(request: Request) {
         project_id: projectId,
         conversation_id: conversationId ?? null,
         status: "running",
+        started_at: new Date().toISOString(),
         prompt: userText,
         result_summary: null,
         error_message: null,
-        meta: { model_id: modelId } as Json,
+        meta: {
+          model_id: modelId,
+          intent: buildIntent?.intent,
+          intent_confidence: buildIntent?.confidence,
+          intent_reason: buildIntent?.reason,
+        } as Json,
       } as never)
       .select("id")
       .single();
@@ -561,7 +596,7 @@ export async function POST(request: Request) {
         let savedMeta: ReturnType<typeof extractBuilderMetadata> = null;
         let savedIconSvg: string | null = null;
 
-        if (mode === "build" && projectId && event.text) {
+        if (startBuildPipeline && projectId && event.text) {
           const files = parseFencedFiles(event.text);
           const meta = extractBuilderMetadata(event.text);
           savedMeta = meta;
@@ -685,7 +720,7 @@ export async function POST(request: Request) {
         const shouldCharge =
           outputSaved &&
           Boolean(event.text?.trim()) &&
-          (mode !== "build" || savedFileCount > 0);
+          (chargeMode !== "build" || savedFileCount > 0);
 
         let charged = false;
         let chargeError: string | null = null;
@@ -693,7 +728,7 @@ export async function POST(request: Request) {
         if (shouldCharge) {
           const chargeCalc = calculateCreditsToCharge({
             modelId: billedModelId,
-            mode,
+            mode: chargeMode,
             inputTokens: event.usage?.inputTokens ?? null,
             outputTokens: event.usage?.outputTokens ?? null,
             fileCount: savedFileCount,
@@ -714,7 +749,7 @@ export async function POST(request: Request) {
             userEmail,
             amount: creditsToCharge,
             modelId: billedModelId,
-            mode,
+            mode: chargeMode,
             operationId: opId,
             conversationId,
             projectId,
@@ -722,6 +757,8 @@ export async function POST(request: Request) {
             providerCostUsd: chargeCalc.estimatedProviderCostUsd,
             tokensInput: event.usage?.inputTokens ?? null,
             tokensOutput: event.usage?.outputTokens ?? null,
+            provider: routed.provider,
+            routeReason: buildIntent?.reason ?? routed.routeReason ?? null,
           });
           charged = charge.charged;
           chargeError = charge.error ?? null;

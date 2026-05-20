@@ -94,7 +94,7 @@ export const INTEGRATION_BRANDS: Record<
   },
 };
 
-const SIZE_PX = { sm: 18, md: 24, lg: 32 } as const;
+const SIZE_PX = { sm: 20, md: 26, lg: 34 } as const;
 
 function resolveProvider(input: string | undefined): IntegrationProvider | null {
   if (!input) return null;
@@ -347,7 +347,7 @@ export function IntegrationIconWell({
   return (
     <span
       className={cn(
-        "inline-flex shrink-0 items-center justify-center rounded-full p-2 shadow-sm ring-1",
+        "inline-flex shrink-0 items-center justify-center rounded-xl p-2 shadow-sm ring-1",
         wellSize,
         brand?.wellClassName ?? "bg-background ring-border/60",
         wellClassName,

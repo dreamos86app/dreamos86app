@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import { bootstrapProfileFromOAuth } from "@/lib/auth/profile-bootstrap";
+import { ensureUserProfileServer } from "@/lib/auth/ensure-user-profile-server";
 import { isPostgrestSchemaOrMissingTableError } from "@/lib/supabase/schema-errors";
 
 /**
@@ -20,21 +21,24 @@ export async function POST() {
     );
   }
 
-  try {
-    await bootstrapProfileFromOAuth(user, null);
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : "bootstrap_failed";
-    const status = isPostgrestSchemaOrMissingTableError(msg) ? 503 : 500;
-    return NextResponse.json(
-      {
-        error: "Profile bootstrap failed",
-        code: isPostgrestSchemaOrMissingTableError(msg) ? "schema_error" : "bootstrap_failed",
-        hint: msg.includes("profiles")
-          ? msg
-          : `${msg} — ensure public.profiles exists (run Supabase migrations).`,
-      },
-      { status },
-    );
+  const rpcEnsure = await ensureUserProfileServer(user.id, user.email ?? null);
+  if (!rpcEnsure.ok) {
+    try {
+      await bootstrapProfileFromOAuth(user, null);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "bootstrap_failed";
+      const status = isPostgrestSchemaOrMissingTableError(msg) ? 503 : 500;
+      return NextResponse.json(
+        {
+          error: "Profile bootstrap failed",
+          code: isPostgrestSchemaOrMissingTableError(msg) ? "schema_error" : "bootstrap_failed",
+          hint: msg.includes("profiles")
+            ? msg
+            : `${msg} — ensure public.profiles exists (run Supabase migrations).`,
+        },
+        { status },
+      );
+    }
   }
 
   try {

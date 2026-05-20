@@ -3,6 +3,7 @@ import { readRefCodeFromCookieHeader } from "@/lib/auth/ref-cookie";
 import { createSupabaseAdmin, type SupabaseAdminClient } from "@/lib/supabase/admin";
 import { attachReferralByCode } from "@/lib/referrals/server-referral";
 import { isMissingProfileColumnError } from "@/lib/supabase/schema-errors";
+import { ensureUserProfileServer } from "@/lib/auth/ensure-user-profile-server";
 
 const FREE_TOKENS = 100;
 
@@ -65,6 +66,7 @@ export async function bootstrapProfileFromOAuth(
   refCodeFromCookie: string | null,
 ): Promise<BootstrapProfileResult> {
   const admin = createSupabaseAdmin();
+  await ensureUserProfileServer(user.id, user.email ?? null);
 
   const meta = user.user_metadata ?? {};
   const rawName = oauthRawName(user);

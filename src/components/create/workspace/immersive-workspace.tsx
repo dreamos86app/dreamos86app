@@ -19,6 +19,7 @@ import {
   LayoutGrid,
   Code2,
   ChevronDown,
+  MessageSquare,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -272,6 +273,9 @@ export function ImmersiveWorkspace({
   const userPinnedScrollRef = React.useRef(false);
   const [showJumpToLatest, setShowJumpToLatest] = React.useState(false);
   const [rightTab, setRightTab] = React.useState<WorkspaceRightTab>("preview");
+  type MobileCreatePanel = "chat" | WorkspaceRightTab;
+  const [mobilePanel, setMobilePanel] = React.useState<MobileCreatePanel>("chat");
+  const lastSubmitFingerprintRef = React.useRef<{ text: string; at: number } | null>(null);
   const [lastSubmitAt, setLastSubmitAt] = React.useState<number | null>(null);
   const [lastApiUrl, setLastApiUrl] = React.useState<string | null>(null);
   const [lastApiStatus, setLastApiStatus] = React.useState<string | null>(null);
@@ -560,13 +564,27 @@ export function ImmersiveWorkspace({
           .eq("conversation_id", convId)
           .order("created_at", { ascending: true });
         if (!cancelled && rows && rows.length > 0) {
-          setMessages(
-            rows.map((m) => ({
+          setMessages((prev) => {
+            if (prev.length > 0) {
+              const seen = new Set(prev.map((m) => m.id));
+              const merged = [...prev];
+              for (const m of rows) {
+                if (!seen.has(m.id)) {
+                  merged.push({
+                    id: m.id,
+                    role: m.role as "user" | "assistant",
+                    parts: [{ type: "text" as const, text: m.content }],
+                  });
+                }
+              }
+              return merged;
+            }
+            return rows.map((m) => ({
               id: m.id,
               role: m.role as "user" | "assistant",
               parts: [{ type: "text" as const, text: m.content }],
-            })),
-          );
+            }));
+          });
         }
       }
       if (!cancelled) setHistLoading(false);
@@ -712,6 +730,14 @@ export function ImmersiveWorkspace({
       setSubmitStatusLabel("Failed: Type a message before building");
       return;
     }
+
+    const now = Date.now();
+    const prev = lastSubmitFingerprintRef.current;
+    if (prev && prev.text === text && now - prev.at < 2000) {
+      setSubmitStatusLabel("Skipped duplicate submit");
+      return;
+    }
+    lastSubmitFingerprintRef.current = { text, at: now };
 
     if (source !== "url-auto" && messages.length === 0) {
       const userMsg: UIMessage = {
@@ -892,6 +918,9 @@ export function ImmersiveWorkspace({
 
     autostartConsumedRef.current = true;
     autoStartedRef.current = true;
+    if (effectiveProjectId && uid) {
+      convHydratedRef.current = `${effectiveProjectId}:${uid}`;
+    }
 
     const userMsg: UIMessage = {
       id: `autostart-user-${handoff.idempotencyKey}`,
@@ -899,6 +928,7 @@ export function ImmersiveWorkspace({
       parts: [{ type: "text", text: handoff.prompt }],
     };
     setMessages([userMsg]);
+    setMobilePanel("chat");
     setInput("");
     cleanAutostartUrl();
 
@@ -975,7 +1005,6 @@ export function ImmersiveWorkspace({
     () => (mode === "build" ? detectRequiredSecretNames(lastAssistantText) : []),
     [mode, lastAssistantText],
   );
-  const tokensForPreview = preflightEstimate?.credits ?? (mode === "build" ? calculateTokens(modelId, mode) : null);
   const buildPlanForStep = React.useMemo(
     () => (mode === "build" && lastAssistantText ? parseBuildPlanCard(lastAssistantText) : null),
     [mode, lastAssistantText],
@@ -1049,8 +1078,44 @@ export function ImmersiveWorkspace({
         }}
       />
 
-      <div className="flex min-h-0 flex-1 overflow-hidden">
-        <div className="flex w-[38%] min-w-[300px] max-w-[480px] flex-col min-h-0 overflow-hidden border-r border-border/50">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
+        <div className="flex shrink-0 items-center gap-1 border-b border-border/60 bg-background/90 px-2 py-1.5 lg:hidden safe-area-pad-x">
+          {(
+            [
+              ["chat", "Chat", MessageSquare],
+              ["preview", "Preview", MonitorPlay],
+              ["dashboard", "Dashboard", LayoutGrid],
+              ["code", "Code", Code2],
+            ] as const
+          ).map(([id, label, Icon]) => (
+            <button
+              key={id}
+              type="button"
+              disabled={id === "dashboard" && !effectiveProject?.id}
+              onClick={() => {
+                setMobilePanel(id);
+                if (id !== "chat") setRightTab(id);
+              }}
+              className={cn(
+                "flex flex-1 items-center justify-center gap-1 rounded-lg px-2 py-2 text-[11px] font-semibold",
+                mobilePanel === id
+                  ? "bg-surface text-foreground shadow-sm ring-1 ring-border"
+                  : "text-muted-foreground",
+              )}
+            >
+              <Icon className="size-3.5" strokeWidth={1.75} />
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div
+          className={cn(
+            "flex min-h-0 flex-col overflow-hidden border-border/50 max-lg:flex-1 max-lg:w-full max-lg:max-w-none",
+            "lg:w-[38%] lg:min-w-[300px] lg:max-w-[480px] lg:border-r",
+            mobilePanel !== "chat" && "max-lg:hidden",
+          )}
+        >
           <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border/50 bg-background/60 px-2.5 backdrop-blur-sm">
             <ModeSwitch value={mode} onChange={setMode} />
             {modeStyle.badge && (
@@ -1182,7 +1247,10 @@ export function ImmersiveWorkspace({
 
           <div
             ref={composerRootRef}
-            className="relative z-30 shrink-0 border-t border-border/50 bg-background/85 px-2.5 pb-3 pt-2 backdrop-blur-md"
+            className={cn(
+              "relative z-30 shrink-0 border-t border-border/50 bg-background/85 px-2.5 pb-3 pt-2 backdrop-blur-md max-lg:pb-[max(0.75rem,env(safe-area-inset-bottom))]",
+              mobilePanel !== "chat" && "max-lg:hidden",
+            )}
           >
             {showUpgradeCard && !creditError && (
               <div className="mb-2 flex items-center justify-between gap-2 rounded-xl border border-accent/25 bg-gradient-to-r from-accent/[0.07] to-violet-500/[0.05] px-3 py-2.5">
@@ -1404,8 +1472,13 @@ export function ImmersiveWorkspace({
           </div>
         </div>
 
-        <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-atmosphere">
-          <div className="flex shrink-0 items-center gap-1 border-b border-border/60 bg-background/75 px-2 py-1.5 backdrop-blur-md">
+        <div
+          className={cn(
+            "flex min-w-0 flex-1 flex-col overflow-hidden bg-atmosphere",
+            mobilePanel === "chat" && "max-lg:hidden",
+          )}
+        >
+          <div className="hidden shrink-0 items-center gap-1 border-b border-border/60 bg-background/75 px-2 py-1.5 backdrop-blur-md lg:flex">
             {tabBtn("preview", "Preview", MonitorPlay)}
             {tabBtn("dashboard", "Dashboard", LayoutGrid, !effectiveProject?.id)}
             {tabBtn("code", "Code", Code2)}
@@ -1431,8 +1504,7 @@ export function ImmersiveWorkspace({
                 previewState={previewShellState}
                 buildStepIndex={buildStepIndex}
                 buildStepLabel={buildStepLabel}
-                tokensEstimate={tokensForPreview}
-                modelLabel={modelLabel}
+                modelLabel={null}
                 onEditTarget={(info) => {
                   setEditTarget(info.section);
                   setScope(info.section.toLowerCase().replace(/\s+/g, "_") as EditScope);

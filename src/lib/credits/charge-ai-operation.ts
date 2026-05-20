@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
+import { ensureUserProfileServer } from "@/lib/auth/ensure-user-profile-server";
 
 type Writer = SupabaseClient<Database>;
 
@@ -16,6 +17,8 @@ export type ChargeAiOperationInput = {
   providerCostUsd?: number;
   tokensInput?: number | null;
   tokensOutput?: number | null;
+  provider?: string | null;
+  routeReason?: string | null;
 };
 
 export type ChargeAiOperationResult = {
@@ -25,38 +28,37 @@ export type ChargeAiOperationResult = {
   idempotent?: boolean;
 };
 
+function logCredits(level: "info" | "warn", msg: string, extra?: Record<string, unknown>) {
+  const line = `[credits] ${msg}`;
+  if (level === "warn") console.warn(line, extra ?? "");
+  else console.info(line, extra ?? "");
+}
+
 /**
  * Server-authoritative credit charge after successful AI work.
- * Uses charge_tokens RPC (idempotent via operationId).
+ * Uses charge_tokens RPC (idempotent via operation_id / idempotency_key).
  */
 export async function chargeAiOperation(
   writer: Writer,
   input: ChargeAiOperationInput,
 ): Promise<ChargeAiOperationResult> {
   if (input.amount < 1) {
-    if (process.env.NODE_ENV !== "production") {
-      console.info("[credits] skipped reason", "invalid_amount");
-    }
+    logCredits("info", "charge skipped reason", { reason: "invalid_amount" });
     return { charged: false, remaining: null, error: "invalid_amount" };
   }
 
-  const devLog = process.env.NODE_ENV !== "production";
-  let balanceBefore: number | null = null;
-  if (devLog) {
-    const { data: prof } = await writer
-      .from("profiles")
-      .select("credits_remaining")
-      .eq("id", input.userId)
-      .maybeSingle();
-    balanceBefore = prof?.credits_remaining ?? null;
-    console.info("[credits] charge start", {
-      operation_id: input.operationId,
-      mode: input.mode,
-      model: input.modelId,
-      amount: input.amount,
-      balance_before: balanceBefore,
-    });
+  const ensured = await ensureUserProfileServer(input.userId, input.userEmail);
+  if (!ensured.ok) {
+    logCredits("warn", "charge failed", { reason: "ensure_profile", error: ensured.error });
   }
+
+  logCredits("info", "charge start", {
+    operation_id: input.operationId,
+    mode: input.mode,
+    model: input.modelId,
+    amount: input.amount,
+    user_id: input.userId,
+  });
 
   const { data: creditResultRaw, error: rpcErr } = await writer.rpc("charge_tokens", {
     p_user_id: input.userId,
@@ -70,79 +72,81 @@ export async function chargeAiOperation(
       project_id: input.projectId,
       operation_id: input.operationId,
       provider_cost_usd: input.providerCostUsd,
+      build_job_id: input.buildJobId,
     },
+    p_project_id: input.projectId ?? null,
+    p_conversation_id: input.conversationId ?? null,
   } as never);
 
   if (rpcErr) {
-    if (devLog) console.warn("[credits] charge failed", rpcErr.message);
+    logCredits("warn", "charge failed", { error: rpcErr.message, operation_id: input.operationId });
     await writer.from("ai_usage_logs").insert({
       user_id: input.userId,
       user_email: input.userEmail,
       model_id: input.modelId,
       mode: input.mode,
+      provider: input.provider ?? null,
+      route_reason: input.routeReason ?? null,
       tokens_charged: 0,
-      credits_charged: input.amount,
+      credits_charged: 0,
       status: "charge_failed",
       error_message: rpcErr.message,
       conversation_id: input.conversationId ?? null,
       operation_id: input.operationId,
       project_id: input.projectId ?? null,
-      build_job_id: input.buildJobId ?? null,
+      charged_after_success: false,
     } as never);
     return { charged: false, remaining: null, error: rpcErr.message };
   }
 
   const creditResult = creditResultRaw as {
+    ok?: boolean;
     success?: boolean;
+    charged?: boolean;
     remaining?: number;
+    balance_after?: number;
     error?: string;
     idempotent?: boolean;
   } | null;
 
-  const charged = Boolean(creditResult?.success);
+  const charged = Boolean(creditResult?.ok ?? creditResult?.success);
   const remaining =
-    typeof creditResult?.remaining === "number" ? creditResult.remaining : null;
+    typeof creditResult?.balance_after === "number"
+      ? creditResult.balance_after
+      : typeof creditResult?.remaining === "number"
+        ? creditResult.remaining
+        : null;
 
-  if (charged) {
-    await writer.from("credit_events").insert({
-      user_id: input.userId,
-      operation_id: input.operationId,
-      model_id: input.modelId,
-      credits_consumed: input.amount,
-      event_type: "generation",
-      conversation_id: input.conversationId ?? null,
-      project_id: input.projectId ?? null,
-      metadata: {
-        mode: input.mode,
-        build_job_id: input.buildJobId,
-        provider_cost_usd: input.providerCostUsd,
-      },
-    } as never);
-
+  if (charged && !creditResult?.idempotent) {
     const usageRow: Record<string, unknown> = {
       user_id: input.userId,
       user_email: input.userEmail,
       model_id: input.modelId,
       mode: input.mode,
+      provider: input.provider ?? null,
+      route_reason: input.routeReason ?? null,
       tokens_charged: input.amount,
       credits_charged: input.amount,
-      credits_consumed: input.amount,
       status: "success",
       conversation_id: input.conversationId ?? null,
       operation_id: input.operationId,
       project_id: input.projectId ?? null,
-      build_job_id: input.buildJobId ?? null,
+      charged_after_success: true,
+      estimated_provider_cost: input.providerCostUsd ?? 0,
     };
 
     if (input.tokensInput != null) usageRow.tokens_input = input.tokensInput;
     if (input.tokensOutput != null) usageRow.tokens_output = input.tokensOutput;
 
     let { error: logErr } = await writer.from("ai_usage_logs").insert(usageRow as never);
-    if (logErr?.message?.includes("tokens_input") || logErr?.message?.includes("credits_consumed")) {
+    if (logErr?.message?.includes("does not exist") || logErr?.message?.includes("column")) {
       const slim = { ...usageRow };
       delete slim.tokens_input;
       delete slim.tokens_output;
-      delete slim.credits_consumed;
+      delete slim.provider;
+      delete slim.route_reason;
+      delete slim.charged_after_success;
+      delete slim.estimated_provider_cost;
       logErr = (await writer.from("ai_usage_logs").insert(slim as never)).error;
     }
 
@@ -155,21 +159,23 @@ export async function chargeAiOperation(
         } as never)
         .eq("id", input.userId);
     }
-  }
 
-  if (devLog) {
-    if (charged) {
-      console.info("[credits] charge ok", {
-        idempotent: creditResult?.idempotent,
-        balance_after: remaining,
-      });
-    } else {
-      console.info("[credits] charge failed", creditResult?.error ?? "not_charged");
-    }
+    logCredits("info", "charge ok", {
+      idempotent: creditResult?.idempotent,
+      balance_after: remaining,
+      operation_id: input.operationId,
+    });
+  } else if (creditResult?.idempotent) {
+    logCredits("info", "charge skipped reason", { reason: "idempotent", operation_id: input.operationId });
+  } else {
+    logCredits("warn", "charge failed", {
+      error: creditResult?.error ?? "not_charged",
+      operation_id: input.operationId,
+    });
   }
 
   return {
-    charged,
+    charged: charged && !creditResult?.idempotent,
     remaining,
     error: charged ? null : (creditResult?.error ?? "charge_failed"),
     idempotent: creditResult?.idempotent,

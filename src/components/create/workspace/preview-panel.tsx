@@ -241,8 +241,6 @@ export function PreviewPanel({
             appName={appName}
             currentStep={buildStepLabel}
             stepIndex={buildStepIndex}
-            tokensEstimate={tokensEstimate}
-            modelLabel={modelLabel}
           />
         )}
 

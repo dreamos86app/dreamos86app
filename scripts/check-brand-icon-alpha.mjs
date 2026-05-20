@@ -1,5 +1,5 @@
 /**
- * Verify DreamOS86 platform icons keep a real alpha channel (not flattened matte).
+ * Verify DreamOS86 platform icons keep alpha and favicon.ico is not the Vercel default.
  */
 
 import fs from "node:fs/promises";
@@ -10,10 +10,20 @@ import sharp from "sharp";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "..");
 
-const CHECKS = [
+/** Default Vercel template favicon.ico byte size — must not ship in production. */
+const VERCEL_DEFAULT_FAVICON_SIZE = 25931;
+
+const PNG_CHECKS = [
   { label: "canonical brand icon", path: "public/brand/dreamos86-icon.png" },
+  { label: "public icon.png", path: "public/icon.png" },
+  { label: "apple-touch-icon", path: "public/apple-touch-icon.png" },
   { label: "favicon 32", path: "public/favicon-32x32.png" },
   { label: "app icon", path: "src/app/icon.png" },
+];
+
+const FAVICON_ICO_PATHS = [
+  { label: "public/favicon.ico", path: "public/favicon.ico" },
+  { label: "src/app/favicon.ico", path: "src/app/favicon.ico" },
 ];
 
 const CORNER_OFFSETS = [
@@ -27,7 +37,7 @@ function cornerAlpha(data, width, x, y) {
   return data[i + 3];
 }
 
-async function checkFile(relPath) {
+async function checkPngTransparency(relPath) {
   const abs = path.join(ROOT, relPath);
   try {
     await fs.access(abs);
@@ -58,10 +68,11 @@ async function checkFile(relPath) {
   if (transparentCorners === 0) {
     return {
       ok: false,
-      error: `${relPath}: corners are opaque — likely black/white matte (flattened)`,
+      error: `${relPath}: corners are opaque — likely gray/white matte (flattened)`,
     };
   }
 
+  let opaqueGrayMatte = 0;
   let opaqueBlack = 0;
   for (let i = 0; i < data.length; i += 4) {
     const r = data[i];
@@ -69,23 +80,58 @@ async function checkFile(relPath) {
     const b = data[i + 2];
     const a = data[i + 3];
     if (a > 240 && r < 12 && g < 12 && b < 12) opaqueBlack += 1;
+    if (a > 240 && Math.abs(r - g) < 8 && Math.abs(g - b) < 8 && r > 180 && r < 245) {
+      opaqueGrayMatte += 1;
+    }
   }
   const total = data.length / 4;
-  const blackRatio = opaqueBlack / total;
-  if (blackRatio > 0.35) {
+  if (opaqueBlack / total > 0.35) {
     return {
       ok: false,
-      error: `${relPath}: ${(blackRatio * 100).toFixed(1)}% opaque black pixels — matte background`,
+      error: `${relPath}: ${((opaqueBlack / total) * 100).toFixed(1)}% opaque black — matte background`,
+    };
+  }
+  if (opaqueGrayMatte / total > 0.25) {
+    return {
+      ok: false,
+      error: `${relPath}: ${((opaqueGrayMatte / total) * 100).toFixed(1)}% opaque gray — flattened canvas`,
     };
   }
 
   return { ok: true, width: w, height: h, hasAlpha: true };
 }
 
+async function checkFaviconIco(relPath) {
+  const abs = path.join(ROOT, relPath);
+  try {
+    const stat = await fs.stat(abs);
+    if (stat.size === VERCEL_DEFAULT_FAVICON_SIZE) {
+      return {
+        ok: false,
+        error: `${relPath}: ${stat.size} bytes matches Vercel default favicon.ico — replace with DreamOS86 icon`,
+      };
+    }
+    if (stat.size < 500) {
+      return { ok: false, error: `${relPath}: suspiciously small (${stat.size} bytes)` };
+    }
+    const iconStat = await fs.stat(path.join(ROOT, "public/icon.png"));
+    if (stat.mtimeMs < iconStat.mtimeMs - 5000) {
+      return {
+        ok: false,
+        error: `${relPath}: older than public/icon.png — regenerate with npm run icons:generate`,
+      };
+    }
+    return { ok: true, size: stat.size, mtime: stat.mtime.toISOString() };
+  } catch {
+    return { ok: false, error: `missing: ${relPath}` };
+  }
+}
+
 async function main() {
   let failed = false;
-  for (const { label, path: rel } of CHECKS) {
-    const result = await checkFile(rel);
+
+  for (const { label, path: rel } of PNG_CHECKS) {
+    const result = await checkPngTransparency(rel);
     if (result.ok) {
       console.log(`[icons:check] OK ${label} (${result.width}x${result.height}, alpha)`);
     } else {
@@ -93,6 +139,30 @@ async function main() {
       failed = true;
     }
   }
+
+  const icoResults = [];
+  for (const { label, path: rel } of FAVICON_ICO_PATHS) {
+    const result = await checkFaviconIco(rel);
+    icoResults.push({ label, result });
+    if (result.ok) {
+      console.log(`[icons:check] OK ${label} (${result.size} bytes, not Vercel default)`);
+    } else {
+      console.error(`[icons:check] FAIL ${label}:`, result.error);
+      failed = true;
+    }
+  }
+
+  if (icoResults.length === 2 && icoResults.every((r) => r.result.ok)) {
+    if (icoResults[0].result.size !== icoResults[1].result.size) {
+      console.error(
+        "[icons:check] FAIL favicon.ico mismatch: public and src/app must be identical (Next.js uses src/app/favicon.ico)",
+      );
+      failed = true;
+    } else {
+      console.log("[icons:check] OK public/favicon.ico and src/app/favicon.ico match");
+    }
+  }
+
   if (failed) process.exit(1);
   console.log("[icons:check] All checks passed.");
 }

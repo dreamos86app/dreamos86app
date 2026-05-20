@@ -168,9 +168,9 @@ export function SignupView() {
       >
         {/* Logo */}
         <div className="mb-8 flex flex-col items-center">
-          <Link href="/" className="flex items-center gap-3" tabIndex={-1}>
-            <LogoIcon size={44} />
-            <span className="text-[18px] font-semibold tracking-[-0.04em] text-foreground">
+          <Link href="/" className="flex items-center gap-1.5" tabIndex={-1}>
+            <LogoIcon size={40} />
+            <span className="text-[17px] font-semibold tracking-[-0.03em] text-foreground">
               DreamOS86
             </span>
           </Link>
@@ -207,11 +207,21 @@ export function SignupView() {
               key={error}
               initial={{ opacity: 0, y: -4 }}
               animate={{ opacity: 1, y: 0 }}
-              className="mt-4 flex items-start gap-2 rounded-lg bg-destructive/10 px-3 py-2.5 text-[12px] text-destructive ring-1 ring-destructive/20"
+              className="mt-4 flex flex-col gap-2 rounded-lg bg-destructive/10 px-3 py-2.5 text-[12px] text-destructive ring-1 ring-destructive/20"
               role="alert"
             >
-              <AlertCircle className="mt-0.5 size-3.5 shrink-0" strokeWidth={2} />
-              {error}
+              <div className="flex items-start gap-2">
+                <AlertCircle className="mt-0.5 size-3.5 shrink-0" strokeWidth={2} />
+                <span>{error}</span>
+              </div>
+              {/account already exists/i.test(error) && (
+                <Link
+                  href={email ? `/auth/login?email=${encodeURIComponent(email)}` : "/auth/login"}
+                  className="w-fit rounded-lg bg-accent px-3 py-1.5 text-[11px] font-semibold text-white"
+                >
+                  Go to login
+                </Link>
+              )}
             </motion.div>
           )}
 

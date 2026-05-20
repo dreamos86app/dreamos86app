@@ -21,16 +21,12 @@ export function BuildPreviewSurface({
   appName,
   currentStep,
   stepIndex = 0,
-  tokensEstimate,
-  modelLabel,
   className,
 }: {
   state: PreviewShellState;
   appName?: string | null;
   currentStep?: string | null;
   stepIndex?: number;
-  tokensEstimate?: number | null;
-  modelLabel?: string | null;
   className?: string;
 }) {
   const step =
@@ -105,22 +101,6 @@ export function BuildPreviewSurface({
               ? "Compiling preview…"
               : "Generating your app"}
         </div>
-        {(tokensEstimate != null || modelLabel) && state !== "idle" && (
-          <p className="max-w-xs text-[10.5px] tabular-nums text-muted-foreground">
-            {tokensEstimate != null && (
-              <>
-                Estimated credits:{" "}
-                <span className="font-semibold text-foreground">{tokensEstimate}</span>
-              </>
-            )}
-            {modelLabel ? (
-              <>
-                {tokensEstimate != null ? " · " : ""}
-                {modelLabel}
-              </>
-            ) : null}
-          </p>
-        )}
       </div>
     </div>
   );

@@ -1,6 +1,7 @@
 import type { User } from "@supabase/supabase-js";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { bootstrapProfileFromOAuth } from "@/lib/auth/profile-bootstrap";
+import { ensureUserProfileServer } from "@/lib/auth/ensure-user-profile-server";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import { isPostgrestSchemaOrMissingTableError } from "@/lib/supabase/schema-errors";
 import { FREE_MONTHLY_QUOTA } from "@/lib/stores/credits-store";
@@ -35,6 +36,8 @@ export async function loadProfileBillingRow(
   supabase: SupabaseClient,
   user: User,
 ): Promise<{ row: ProfileBillingRow | null; hint?: string }> {
+  await ensureUserProfileServer(user.id, user.email ?? null);
+
   const { data: userRow, error: userErr } = await supabase
     .from("profiles")
     .select("plan_id, credits_remaining, credits_reset_at, email")

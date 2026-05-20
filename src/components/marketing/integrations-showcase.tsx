@@ -95,11 +95,11 @@ export function IntegrationShowcaseSection({ variant = "default" }: { variant?: 
         <motion.div className="flex items-center gap-2">
           <motion.div
             className={cn(
-              "flex size-9 items-center justify-center rounded-xl ring-1 ring-accent/20",
-              premium ? "bg-gradient-to-br from-accent/20 to-violet-500/15" : "bg-accent/10",
+              "flex size-10 shrink-0 items-center justify-center rounded-2xl ring-1 ring-accent/25 shadow-sm",
+              premium ? "bg-gradient-to-br from-accent/25 to-violet-500/15" : "bg-accent/12",
             )}
           >
-            <Plug className="size-4 text-accent" strokeWidth={1.6} />
+            <Plug className="size-[18px] text-accent" strokeWidth={2} />
           </motion.div>
           <motion.div>
             <h2 className="text-[15px] font-semibold tracking-tight text-foreground">Integrations</h2>
