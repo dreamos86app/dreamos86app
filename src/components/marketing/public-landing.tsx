@@ -27,8 +27,8 @@ function PublicAuthModal({
 }) {
   const nextCreate =
     draft.trim().length > 0
-      ? `/create?prompt=${encodeURIComponent(draft.trim())}`
-      : "/create";
+      ? `/create?prompt=${encodeURIComponent(draft.trim())}&mode=build&autostart=1`
+      : "/create?mode=build&autostart=1";
   const signupHref = `/auth/signup?next=${encodeURIComponent(nextCreate)}`;
   const loginHref = `/auth/login?next=${encodeURIComponent(nextCreate)}`;
 
@@ -108,7 +108,7 @@ export function PublicLanding() {
 
       <PublicMarketingHeader />
 
-      <main className="relative z-10 mx-auto w-full max-w-6xl flex-1 px-4 pb-16 pt-10 sm:px-6 sm:pt-14">
+      <main className="relative z-10 mx-auto w-full max-w-6xl flex-1 px-4 pb-20 pt-8 sm:px-6 sm:pb-16 sm:pt-12">
         <motion.div
           aria-hidden
           className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[420px] bg-[radial-gradient(ellipse_80%_60%_at_50%_-10%,hsl(var(--accent)/0.22),transparent_70%)]"
@@ -126,13 +126,11 @@ export function PublicLanding() {
           <p className="inline-flex items-center gap-1.5 rounded-full bg-accent/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-accent">
             <Sparkles className="size-3.5" strokeWidth={2} /> AI-native app OS
           </p>
-          <h1 className="mt-5 text-balance text-[32px] font-semibold tracking-tight text-foreground sm:text-[42px]">
-            Describe software. DreamOS86 builds the UI, logic, and files — then hosts it for you.
+          <h1 className="mt-5 text-balance text-[28px] font-semibold tracking-tight text-foreground sm:text-[40px]">
+            Build real apps with AI.
           </h1>
-          <p className="mt-4 text-pretty text-[15px] leading-relaxed text-muted-foreground sm:text-[16px]">
-            One workspace for planning, multi-model chat, real saved projects, and honest publish paths — web on{" "}
-            <span className="font-medium text-foreground">your-app.dreamos86.com</span>, mobile packaging when your plan
-            and builder are ready.
+          <p className="mt-4 text-pretty text-[15px] leading-relaxed text-muted-foreground sm:text-[17px]">
+            Describe what you need. DreamOS86 plans, builds, previews, and helps you publish — all in one workspace.
           </p>
 
           <div className="mx-auto mt-8 max-w-xl rounded-2xl border border-accent/20 bg-gradient-to-b from-accent/[0.08] to-background p-1 shadow-[0_24px_64px_-28px_rgba(30,107,255,0.35)] ring-1 ring-border/80">
@@ -176,7 +174,7 @@ export function PublicLanding() {
               <Shield className="size-3.5 text-accent" strokeWidth={1.75} /> Your data, your Supabase workspace
             </span>
             <span className="inline-flex items-center gap-1.5">
-              <Rocket className="size-3.5 text-accent" strokeWidth={1.75} /> Tokens only after successful AI steps
+              <Rocket className="size-3.5 text-accent" strokeWidth={1.75} /> Credits only after successful AI steps
             </span>
           </div>
         </motion.section>
@@ -193,14 +191,20 @@ export function PublicLanding() {
         </motion.div>
 
         {/* Ship section — "Now you can ship software within minutes — not months" */}
-        <div className="mx-auto mt-14 max-w-5xl">
+        <motion.div className="mx-auto mt-14 max-w-5xl">
           <PublicShipSection />
-        </div>
+        </motion.div>
 
         {/* DreamOS86 in numbers */}
-        <div className="mx-auto mt-14 max-w-5xl">
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, margin: "-40px" }}
+          transition={{ duration: 0.4 }}
+          className="mx-auto mt-14 w-full max-w-5xl"
+        >
           <DreamOsStatsSection />
-        </div>
+        </motion.div>
 
         {/* Bottom signup CTA */}
         <PublicSignupSection />

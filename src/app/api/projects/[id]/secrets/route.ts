@@ -107,6 +107,7 @@ export async function POST(
   const { error } = await admin.from("project_secrets").upsert(
     {
       project_id: projectId,
+      owner_id: user.id,
       key_name: keyName,
       ciphertext: sealed,
       updated_at: new Date().toISOString(),

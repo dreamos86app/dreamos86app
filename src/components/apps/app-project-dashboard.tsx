@@ -5,6 +5,7 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 import type { Tables } from "@/lib/supabase/types";
 import { AppDashboardPanel } from "@/components/create/workspace/app-dashboard-panel";
+import { ProjectIntegrationsPanel } from "@/components/integrations/project-integrations-panel";
 import {
   LayoutGrid,
   MonitorPlay,
@@ -80,6 +81,8 @@ export function AppProjectDashboard({ project }: { project: ProjectRow }) {
         <div className="max-h-[min(70vh,720px)] overflow-y-auto">
           {active === "overview" ? (
             <AppDashboardPanel project={project} isBusy={false} />
+          ) : active === "integrations" ? (
+            <ProjectIntegrationsPanel projectId={project.id} />
           ) : (
             <div className="p-6 text-center">
               <p className="text-[13px] text-muted-foreground">

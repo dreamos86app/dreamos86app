@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import { useChat } from "@ai-sdk/react";
@@ -17,6 +18,7 @@ import {
   MonitorPlay,
   LayoutGrid,
   Code2,
+  ChevronDown,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -33,23 +35,33 @@ import {
 import { calculateTokens } from "@/lib/credits/cost-engine";
 import { toast } from "@/lib/toast";
 import { createDreamChatTransport } from "@/lib/chat/create-chat-transport";
-import { resolveClientUserId } from "@/lib/chat/resolve-client-user";
+import { runAiPreflight } from "@/lib/ai/run-preflight";
+import { isAiPreflightSuccess, preflightBlockedLabel } from "@/lib/ai/preflight-types";
 import { applyComposerPaste } from "@/lib/composer/textarea-handlers";
 import { composerTextareaClass } from "@/components/ui/composer-shell";
 import { ModelPicker } from "@/components/create/workspace/model-picker";
 import { ModeSwitch, type EditScope } from "@/components/create/workspace/mode-switch";
 import { AttachmentRail, DropZone, type Attachment } from "@/components/create/workspace/attachment-rail";
 import { PreviewPanel } from "@/components/create/workspace/preview-panel";
-import { AgentPhases } from "@/components/create/workspace/agent-phases";
 import { BuildStatusNarrator } from "@/components/create/workspace/build-status-narrator";
+import { BuilderAssistantMessage } from "@/components/builder/builder-event-ui";
+import {
+  parseBuildPlanCard,
+  taskProgressIndex,
+} from "@/lib/creation/parse-build-plan";
+import { extractBuilderMetadata } from "@/lib/creation/parse-builder-metadata";
+import { isSubmitDebugEnabled } from "@/lib/dev/submit-debug-enabled";
 import { IntegrationSecretsPanel } from "@/components/create/workspace/integration-secrets-panel";
 import { detectRequiredSecretNames } from "@/lib/integrations/detect-required-secrets";
 import { WorkspaceLauncher, type WorkspaceRightTab } from "@/components/create/workspace/workspace-launcher";
 import { AppDashboardPanel } from "@/components/create/workspace/app-dashboard-panel";
 import { resolveDisplayName } from "@/lib/profile-display";
 import { extractFencedCode, stripFencedCodeForChat, parseFencedFiles } from "@/lib/creation/extract-fenced-code";
-import { submitDebug } from "@/lib/dev/submit-debug";
-import { ComposerDebugStrip } from "@/components/dev/composer-debug-strip";
+import { submitDebug, uiSubmitLog } from "@/lib/dev/submit-debug";
+import { useComposerClickCapture } from "@/lib/dev/composer-click-capture";
+import { pushSubmitTrace } from "@/lib/dev/submit-pipeline-trace";
+import { SubmitPipelinePanel } from "@/components/dev/submit-pipeline-panel";
+import { CREATE_BUILD_BUNDLE } from "@/lib/dev/create-build-bundle";
 import type { Tables } from "@/lib/supabase/types";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -64,16 +76,6 @@ function messageText(m: UIMessage): string {
 
 function newAttachmentId() {
   return `att_${Math.random().toString(36).slice(2, 10)}_${Date.now()}`;
-}
-
-function slugFromTitle(title: string): string {
-  return (
-    title
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "")
-      .slice(0, 44) || "app"
-  );
 }
 
 export type CreateWorkspaceProject = Pick<
@@ -177,17 +179,25 @@ function MessageBubble({
   userName,
   streaming,
   mode,
+  creditsUsed,
 }: {
   message: UIMessage;
   userAvatar?: string | null;
   userName: string;
   streaming?: boolean;
   mode: CreationMode;
+  creditsUsed?: number | null;
 }) {
   const isUser = message.role === "user";
   const raw = messageText(message);
   const text =
     !isUser && mode === "build" ? stripFencedCodeForChat(raw) : raw;
+  const buildMeta = !isUser && mode === "build" ? extractBuilderMetadata(raw) : null;
+  const buildPlan = !isUser && mode === "build" ? parseBuildPlanCard(raw) : null;
+  const progressIndex =
+    buildPlan && mode === "build"
+      ? taskProgressIndex(raw.length, buildPlan.taskLabels.length)
+      : 0;
 
   return (
     <motion.div
@@ -223,8 +233,17 @@ function MessageBubble({
                 Working on your app…
               </span>
             </div>
+          ) : mode === "build" && buildPlan ? (
+            <BuilderAssistantMessage
+              text={text}
+              streaming={streaming}
+              meta={buildMeta}
+              plan={buildPlan}
+              progressIndex={progressIndex}
+              creditsUsed={creditsUsed}
+            />
           ) : (
-            <AgentPhases text={text} streaming={streaming} suppressCode={mode === "build"} />
+            <div className="whitespace-pre-wrap text-[13.5px] leading-relaxed">{text}</div>
           )}
         </div>
       )}
@@ -246,7 +265,7 @@ const MODE_STYLE = {
   build: {
     composerWrap:
       "composer-shell border border-violet-500/25 bg-surface shadow-sm transition-colors focus-within:border-violet-400/40",
-    badge: { label: "Full Build", color: "bg-violet-500/10 text-violet-600 ring-violet-500/25" },
+    badge: null,
   },
 } satisfies Record<
   string,
@@ -256,19 +275,32 @@ const MODE_STYLE = {
 export interface ImmersiveWorkspaceProps {
   initialPrompt?: string;
   initialMode?: CreationMode;
+  initialAutoStart?: boolean;
   project?: CreateWorkspaceProject | null;
 }
 
 export function ImmersiveWorkspace({
   initialPrompt = "",
   initialMode = "build",
+  initialAutoStart = false,
   project = null,
 }: ImmersiveWorkspaceProps) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const authReturnTo = React.useMemo(() => {
+    const qs = searchParams?.toString();
+    return qs ? `${pathname}?${qs}` : pathname || "/create";
+  }, [pathname, searchParams]);
   const supabase = createClient();
   const { profile, user } = useAuthStore();
   const uid = user?.id ?? profile?.id;
-  const { remaining, isConfirmed, resetAt, syncFromDB } = useCreditsStore();
+  const { remaining, isConfirmed, resetAt, syncFromDB, deductOptimistic } = useCreditsStore();
   const hydrated = useHydrated();
+  const debugEnabled = isSubmitDebugEnabled(
+    searchParams,
+    profile?.email ?? user?.email ?? null,
+  );
 
   const [input, setInput] = React.useState(initialPrompt);
   const [mode, setMode] = React.useState<CreationMode>(initialMode);
@@ -278,12 +310,27 @@ export function ImmersiveWorkspace({
   const [creditError, setCreditError] = React.useState(false);
   const [conversationId, setConversationId] = React.useState<string | null>(null);
   const [localProjectId, setLocalProjectId] = React.useState<string | null>(null);
-  const [autoSubmitted, setAutoSubmitted] = React.useState(false);
+  const [autoStartFailed, setAutoStartFailed] = React.useState<string | null>(null);
+  const autoStartedRef = React.useRef(false);
+  const userPinnedScrollRef = React.useRef(false);
+  const [showJumpToLatest, setShowJumpToLatest] = React.useState(false);
   const [rightTab, setRightTab] = React.useState<WorkspaceRightTab>("preview");
   const [lastSubmitAt, setLastSubmitAt] = React.useState<number | null>(null);
+  const [lastApiUrl, setLastApiUrl] = React.useState<string | null>(null);
   const [lastApiStatus, setLastApiStatus] = React.useState<string | null>(null);
+  const [editNeedsApp, setEditNeedsApp] = React.useState(false);
+  const [submitBlocker, setSubmitBlocker] = React.useState<string | null>(null);
+  const [debugClicked, setDebugClicked] = React.useState(false);
+  const [debugSubmitted, setDebugSubmitted] = React.useState(false);
+  const [preflightState, setPreflightState] = React.useState("idle");
+  const [chatState, setChatState] = React.useState("idle");
+  const [debugBlocked, setDebugBlocked] = React.useState("no");
+  const [submitStatusLabel, setSubmitStatusLabel] = React.useState("Ready");
 
+  const composerRootRef = React.useRef<HTMLDivElement>(null);
   const formRef = React.useRef<HTMLFormElement>(null);
+  const submitInFlightRef = React.useRef(false);
+  useComposerClickCapture("create", composerRootRef);
   const fileRef = React.useRef<HTMLInputElement>(null);
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const conversationIdRef = React.useRef<string | null>(null);
@@ -338,7 +385,7 @@ export function ImmersiveWorkspace({
   const transport = React.useMemo(
     () =>
       createDreamChatTransport({
-        label: "create-workspace",
+        label: "create",
         getBody: () => ({
           modelId: modelIdRef.current,
           mode: modeRef.current,
@@ -348,6 +395,19 @@ export function ImmersiveWorkspace({
         }),
         on402: () => setCreditError(true),
         onSuccess: () => setCreditError(false),
+        onFetchStart: (url) => {
+          setLastApiUrl(url);
+          setLastApiStatus("pending");
+          setChatState("pending");
+          submitDebug("create", "fetch start", { url });
+        },
+        onFetchEnd: (status) => {
+          const label = String(status);
+          setLastApiStatus(label);
+          setChatState(label.startsWith("blocked") ? "error" : "ok");
+          uiSubmitLog("create", `chat status ${status}`);
+          submitDebug("create", "response status", { status });
+        },
       }),
     [],
   );
@@ -362,6 +422,8 @@ export function ImmersiveWorkspace({
       toast.error(err.message ?? "Generation failed — try again.");
     },
     onFinish: () => {
+      const cost = calculateTokens(modelIdRef.current, modeRef.current);
+      deductOptimistic(cost);
       if (uid) void syncFromDB(uid, { force: true });
     },
   });
@@ -387,119 +449,67 @@ export function ImmersiveWorkspace({
     };
   }, [effectiveProjectId, isBusy, supabase]);
 
-  const buildLocked = mode === "build" && isConfirmed && remaining <= 0;
-
   React.useEffect(() => {
-    submitDebug("create", "composer mounted");
+    submitDebug("create", "mounted");
+    pushSubmitTrace("create", "ImmersiveWorkspace loaded — submit pipeline active", { level: "ok" });
     if (uid) void syncFromDB(uid);
   }, [uid, syncFromDB]);
 
   React.useEffect(() => {
     submitDebug("create", "mode changed", { mode });
+    if (mode !== "edit") setEditNeedsApp(false);
   }, [mode]);
 
   const trimmedInput = input.trim();
-  const submitDisabledReason = !trimmedInput
-    ? "empty"
-    : isBusy
-      ? "busy"
-      : buildLocked
-        ? "tokens"
-        : null;
+  const tokenBlocked = isConfirmed && remaining <= 0;
+  const submitDisabledReason = !trimmedInput ? "empty" : isBusy ? "busy" : null;
 
-  const tokensStatus = !isConfirmed ? "loading" : buildLocked ? "blocked" : `${remaining}`;
+  const tokensStatus = !isConfirmed ? "loading" : tokenBlocked ? "blocked" : `${remaining}`;
   const planId = profile?.plan_id ?? "free";
   const nextPlanLabel = PLAN_NEXT_LABEL[planId] ?? "Starter";
-  const showUpgradeCard = buildLocked && planId !== "enterprise";
+  const showUpgradeCard = tokenBlocked && planId !== "enterprise";
+
+  const scrollToBottom = React.useCallback((behavior: ScrollBehavior = "smooth") => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior });
+  }, []);
 
   React.useEffect(() => {
-    if (!scrollRef.current) return;
-    scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, isBusy]);
+    if (userPinnedScrollRef.current) return;
+    scrollToBottom(isBusy ? "auto" : "smooth");
+  }, [messages, isBusy, scrollToBottom]);
 
-  React.useEffect(() => {
-    if (!hydrated || autoSubmitted || !initialPrompt.trim()) return;
-    setAutoSubmitted(true);
-    const timer = setTimeout(() => {
-      void (async () => {
-        if (buildLocked) return;
-        const pid = mode === "build" ? await ensureProjectDraft(initialPrompt) : effectiveProjectId;
-        if (mode === "build" && !pid) return;
-        const { id: cid, created } = await ensureConversation(initialPrompt);
-        if (!cid) {
-          toast.error("Could not start a session");
-          return;
-        }
-        try {
-          clearError();
-          await sendMessage({ text: initialPrompt });
-          if (created) setConversationId(cid);
-          setInput("");
-        } catch (err) {
-          if (process.env.NODE_ENV !== "production") {
-            console.error("[create-workspace] auto sendMessage", err);
-          }
-          toast.error(err instanceof Error ? err.message : "Could not start build");
-        }
-      })();
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [hydrated, autoSubmitted, initialPrompt, sendMessage, buildLocked, mode, effectiveProjectId]);
+  const onChatScroll = React.useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const pinned = dist > 96;
+    userPinnedScrollRef.current = pinned;
+    setShowJumpToLatest(pinned);
+  }, []);
 
   React.useEffect(() => {
     if (rightTab === "dashboard" && !effectiveProject?.id) setRightTab("preview");
   }, [rightTab, effectiveProject?.id]);
 
-  async function ensureProjectDraft(firstMessage: string): Promise<string | null> {
-    const existing = localProjectId ?? project?.id;
-    if (existing) {
-      projectIdRef.current = existing;
-      return existing;
+  function failSubmit(blocked: string, message: string, hint?: string) {
+    const full = hint ? `${message} — ${hint}` : message;
+    setLastApiStatus(blocked);
+    setSubmitBlocker(full);
+    setDebugBlocked(blocked.replace(/^blocked:/, "") || "error");
+    if (blocked.includes("preflight") || blocked.startsWith("blocked:")) {
+      setPreflightState("error");
     }
-    const resolvedUid = await resolveClientUserId(supabase, user, profile);
-    if (!resolvedUid) return null;
-    const base = slugFromTitle(firstMessage);
-    const slug = `${base}-${Date.now().toString(36)}`;
-    const { data, error: insErr } = await supabase
-      .from("projects")
-      .insert({
-        owner_id: resolvedUid,
-        name: firstMessage.slice(0, 80) || "New app",
-        slug,
-        status: "building",
-        framework: "nextjs",
-      } as never)
-      .select("id")
-      .single();
-    if (insErr || !data?.id) {
-      toast.error(insErr?.message ?? "Could not create app project");
-      return null;
-    }
-    setLocalProjectId(data.id);
-    projectIdRef.current = data.id;
-    return data.id;
-  }
-
-  async function ensureConversation(
-    firstMessage: string,
-  ): Promise<{ id: string | null; created: boolean }> {
-    if (conversationIdRef.current) {
-      return { id: conversationIdRef.current, created: false };
-    }
-    const resolvedUid = await resolveClientUserId(supabase, user, profile);
-    if (!resolvedUid) return { id: null, created: false };
-    const title = firstMessage.slice(0, 80) || "New session";
-    const { data, error: insertErr } = await supabase
-      .from("conversations")
-      .insert({ user_id: resolvedUid, title, model_id: modelId })
-      .select("id")
-      .single();
-    if (insertErr || !data) {
-      toast.error(insertErr?.message ?? "Could not start conversation");
-      return { id: null, created: false };
-    }
-    conversationIdRef.current = data.id;
-    return { id: data.id, created: true };
+    pushSubmitTrace("create", full, {
+      level: "error",
+      error: full,
+      blocked: blocked.replace(/^blocked:/, "") || "error",
+      preflight: blocked.includes("preflight") ? "error" : undefined,
+      chat: blocked.includes("server") ? "error" : undefined,
+    });
+    toast.error(full);
+    submitDebug("create", blocked, { message });
   }
 
   const onFiles = React.useCallback((files: File[]) => {
@@ -524,76 +534,240 @@ export function ImmersiveWorkspace({
   }, []);
 
   function notifySubmitBlocked(reason: string) {
-    submitDebug("create", `blocked: ${reason}`);
-    if (reason === "tokens") {
-      setCreditError(true);
-      toast.error("Not enough tokens to run a build.");
+    setDebugBlocked(reason);
+    if (reason === "empty") {
+      failSubmit("blocked:empty", "Type a message before sending.");
     } else if (reason === "busy") {
-      toast.error("Please wait for the current generation to finish.");
+      failSubmit("blocked:busy", "Please wait for the current generation to finish.");
     }
   }
 
-  async function submit(source: "button" | "enter" | "form" = "button") {
-    setLastSubmitAt(Date.now());
-    submitDebug("create", "submit handler started", { source, mode, chars: input.trim().length, isBusy });
+  const runSubmit = React.useCallback(async (source: "button" | "enter" | "form" | "url-auto" = "button") => {
+    setDebugClicked(true);
+    setSubmitStatusLabel("Submit started");
+
+    if (submitInFlightRef.current) {
+      setDebugBlocked("busy");
+      notifySubmitBlocked("busy");
+      setSubmitStatusLabel("Failed: A request is already in progress");
+      return;
+    }
+    setDebugSubmitted(true);
+    uiSubmitLog("create", "handleSubmit start", { source });
+    submitDebug("create", "handleSubmit start", { source });
     const text = input.trim();
+    submitDebug("create", "submit guard check", { empty: !text, busy: isBusy, mode });
+
     if (!text) {
+      setDebugBlocked("empty");
       notifySubmitBlocked("empty");
+      setSubmitStatusLabel("Failed: Type a message before building");
       return;
     }
     if (isBusy) {
+      setDebugBlocked("busy");
       notifySubmitBlocked("busy");
+      setSubmitStatusLabel("Failed: Wait for the current generation to finish");
       return;
     }
-    if (buildLocked) {
-      notifySubmitBlocked("tokens");
-      return;
-    }
+
+    submitInFlightRef.current = true;
+    const draft = input;
+    setLastSubmitAt(Date.now());
+    setSubmitBlocker(null);
+    setDebugBlocked("no");
+    setEditNeedsApp(false);
     clearError();
+    submitDebug("create", "selected mode", { mode });
 
-    const resolvedUid = await resolveClientUserId(supabase, user, profile);
-    if (!resolvedUid) {
-      toast.error("Please sign in again.");
-      submitDebug("create", "blocked: no auth");
-      return;
-    }
+    try {
+      setSubmitStatusLabel("Preflight started");
+      setLastApiUrl("/api/ai/preflight");
+      setLastApiStatus("preflight:pending");
+      setPreflightState("pending");
+      setChatState("idle");
+      uiSubmitLog("create", "preflight fetch start");
+      submitDebug("create", "preflight start");
 
-    if (mode === "build") {
-      submitDebug("create", "ensuring project draft");
-      const pid = await ensureProjectDraft(text);
-      if (!pid) {
-        submitDebug("create", "blocked: project draft failed");
+      const pre = await runAiPreflight({
+        mode,
+        prompt: text,
+        projectId: effectiveProjectId,
+        conversationId: conversationIdRef.current,
+        modelId,
+      });
+
+      uiSubmitLog("create", `preflight status ${pre.ok ? "ok" : pre.status}`, {
+        code: pre.ok ? undefined : pre.code,
+      });
+      submitDebug("create", "preflight status", {
+        ok: pre.ok,
+        status: pre.ok ? 200 : pre.status,
+        code: pre.ok ? undefined : pre.code,
+      });
+
+      if (!isAiPreflightSuccess(pre)) {
+        setPreflightState("error");
+        const blocked = preflightBlockedLabel(pre.code, pre.status);
+        if (pre.code === "edit_no_app") setEditNeedsApp(true);
+        if (pre.code === "insufficient_tokens") setCreditError(true);
+        const reason = `Preflight HTTP ${pre.status}${pre.code ? ` (${pre.code})` : ""}: ${pre.error}`;
+        pushSubmitTrace("create", reason, {
+          level: "error",
+          error: pre.hint ? `${pre.error} — ${pre.hint}` : pre.error,
+          preflight: "error",
+          blocked: pre.code ?? String(pre.status),
+        });
+        failSubmit(blocked, pre.error, pre.hint);
+        setSubmitStatusLabel(
+          `Failed: Preflight HTTP ${pre.status}${pre.code ? ` (${pre.code})` : ""} — ${pre.hint ? `${pre.error} — ${pre.hint}` : pre.error}`,
+        );
         return;
       }
-      submitDebug("create", "project ready", { projectId: pid });
-    }
-    submitDebug("create", "ensuring conversation");
-    const { id: cid, created } = await ensureConversation(text);
-    if (!cid) {
-      submitDebug("create", "blocked: conversation failed");
-      return;
-    }
 
-    const draft = input;
-    setInput("");
-    setAttachments([]);
+      setPreflightState("ok");
+      pushSubmitTrace("create", "Preflight OK — starting chat", { level: "ok", preflight: "ok" });
 
-    submitDebug("create", "fetch build route started", { conversationId: cid, mode });
-    setLastApiStatus("pending");
-    try {
+      if (pre.projectId) {
+        if (!project?.id) setLocalProjectId(pre.projectId);
+        projectIdRef.current = pre.projectId;
+      }
+      if (pre.conversationId) {
+        conversationIdRef.current = pre.conversationId;
+        setConversationId(pre.conversationId);
+      }
+
+      submitDebug("create", "payload ready", {
+        mode,
+        projectId: projectIdRef.current,
+        conversationId: conversationIdRef.current,
+      });
+
+      setInput("");
+      setAttachments([]);
+
+      setSubmitStatusLabel("Chat started");
+      uiSubmitLog("create", "chat fetch start");
+      setLastApiUrl("/api/chat");
+      setLastApiStatus("pending");
+      setChatState("pending");
       await sendMessage({ text });
-      if (created) setConversationId(cid);
-      setLastApiStatus("ok");
-      submitDebug("create", "sendMessage resolved — stream should update UI");
+      setLastApiStatus((s) => (s === "pending" ? "ok" : s));
+      setChatState("ok");
+      submitDebug("create", "ui updated");
+      setSubmitStatusLabel("Chat started (stream active)");
     } catch (err) {
       setLastApiStatus("error");
-      submitDebug("create", "sendMessage failed", {
-        message: err instanceof Error ? err.message : String(err),
-      });
-      toast.error(err instanceof Error ? err.message : "Could not send message");
-      setInput(draft);
+      setChatState("error");
+      const msg = err instanceof Error ? err.message : "Could not send message";
+      failSubmit("blocked:server", msg);
+      setSubmitStatusLabel(`Failed: ${msg}`);
+      if (source === "url-auto") {
+        setAutoStartFailed(msg);
+        autoStartedRef.current = false;
+      }
+      if (source !== "url-auto") setInput(draft);
+    } finally {
+      submitInFlightRef.current = false;
     }
-  }
+  }, [
+    input,
+    isBusy,
+    mode,
+    modelId,
+    effectiveProjectId,
+    project?.id,
+    clearError,
+    sendMessage,
+  ]);
+
+  const runSubmitRef = React.useRef(runSubmit);
+  runSubmitRef.current = runSubmit;
+
+  const handleFormSubmit = React.useCallback((e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setDebugSubmitted(true);
+    setSubmitStatusLabel("Click detected");
+    uiSubmitLog("create-ui", "form submit fired");
+    submitDebug("create", "form submit fired");
+    void runSubmitRef.current("form");
+  }, []);
+
+  const handleFormSubmitCapture = React.useCallback(() => {
+    setSubmitStatusLabel("Click detected");
+  }, []);
+
+  const cleanAutostartUrl = React.useCallback(() => {
+    if (!searchParams?.get("autostart")) return;
+    const next = new URLSearchParams(searchParams.toString());
+    next.delete("autostart");
+    next.delete("prompt");
+    const qs = next.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname || "/create", { scroll: false });
+  }, [pathname, router, searchParams]);
+
+  React.useEffect(() => {
+    if (!hydrated || !initialAutoStart || !initialPrompt.trim()) return;
+    if (autoStartedRef.current) return;
+    const storageKey = `dreamos_autostart:${initialPrompt.slice(0, 120)}`;
+    if (typeof sessionStorage !== "undefined" && sessionStorage.getItem(storageKey) === "done") {
+      return;
+    }
+    autoStartedRef.current = true;
+    const timer = setTimeout(() => {
+      cleanAutostartUrl();
+      if (typeof sessionStorage !== "undefined") {
+        sessionStorage.setItem(storageKey, "done");
+      }
+      void runSubmitRef.current("url-auto").catch(() => {
+        autoStartedRef.current = false;
+        if (typeof sessionStorage !== "undefined") sessionStorage.removeItem(storageKey);
+        setAutoStartFailed("Could not start the build automatically. Check your connection and try again.");
+      });
+    }, 500);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot URL bootstrap
+  }, [hydrated, initialAutoStart, initialPrompt, cleanAutostartUrl]);
+
+  React.useEffect(() => {
+    if (!hydrated) return;
+    pushSubmitTrace("create", "Create composer mounted", { level: "ok" });
+  }, [hydrated]);
+
+  /** Native capture listeners — works even if React handlers fail to attach. */
+  React.useEffect(() => {
+    if (!hydrated) return;
+    const btn = composerRootRef.current?.querySelector(
+      "[data-create-build-btn]",
+    ) as HTMLButtonElement | null;
+    if (!btn) {
+      pushSubmitTrace("create", "Build button missing from DOM — cannot wire click", {
+        level: "error",
+        error: "Build button not found. Try refreshing the page.",
+      });
+      return;
+    }
+    pushSubmitTrace("create", "Build button found — native listeners attached", { level: "ok" });
+
+    const onPointerDown = () => {
+      setDebugClicked(true);
+      setSubmitStatusLabel("Pointer down detected");
+      uiSubmitLog("create-ui", "build pointer down");
+    };
+    const onClick = () => {
+      setDebugClicked(true);
+      setSubmitStatusLabel("Click detected");
+      uiSubmitLog("create-ui", "build click (native)");
+      void runSubmitRef.current("button");
+    };
+
+    btn.addEventListener("pointerdown", onPointerDown, true);
+    btn.addEventListener("click", onClick, true);
+    return () => {
+      btn.removeEventListener("pointerdown", onPointerDown, true);
+      btn.removeEventListener("click", onClick, true);
+    };
+  }, [hydrated, mode]);
 
   const showEmpty = messages.length === 0 && !isBusy;
   const modeStyle = MODE_STYLE[mode];
@@ -642,6 +816,14 @@ export function ImmersiveWorkspace({
 
   return (
     <DropZone onFiles={onFiles} disabled={isBusy} className="flex h-screen w-full flex-col overflow-hidden">
+      {debugEnabled && (
+        <motion.div
+          className="shrink-0 border-b border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-center text-[11px] font-semibold text-amber-950 dark:text-amber-100"
+          data-testid="create-build-bundle"
+        >
+          Create build bundle: {CREATE_BUILD_BUNDLE}
+        </motion.div>
+      )}
       <WorkspaceLauncher
         project={
           effectiveProject
@@ -678,6 +860,7 @@ export function ImmersiveWorkspace({
 
           <div
             ref={scrollRef}
+            onScroll={onChatScroll}
             className={cn(
               "min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]",
               mode === "build" && "bg-gradient-to-b from-accent/[0.04] to-transparent",
@@ -718,7 +901,16 @@ export function ImmersiveWorkspace({
                 />
               )}
 
-              {isBusy && <BuildStatusNarrator isStreaming={isBusy} className="mt-1" />}
+              {isBusy && (
+                <BuildStatusNarrator
+                  isStreaming={isBusy}
+                  activeStep={taskProgressIndex(
+                    lastAssistantText.length,
+                    parseBuildPlanCard(lastAssistantText).taskLabels.length || 6,
+                  )}
+                  className="mt-1"
+                />
+              )}
 
               {creditError && (
                 <div className="overflow-hidden rounded-xl bg-gradient-to-br from-background via-surface to-background shadow-[0_4px_16px_-4px_rgba(0,0,0,0.3)] ring-1 ring-border/80">
@@ -729,9 +921,9 @@ export function ImmersiveWorkspace({
                         <Zap className="size-4 text-accent" strokeWidth={1.75} />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="text-[13px] font-semibold text-foreground">You&apos;re out of tokens</p>
+                        <p className="text-[13px] font-semibold text-foreground">You&apos;re out of credits</p>
                         <p className="mt-0.5 text-[11.5px] text-muted-foreground">
-                          All monthly tokens are used{resetAt ? `. They reset after ${new Date(resetAt).toLocaleDateString()}.` : "."} Upgrade to keep
+                          All monthly credits are used{resetAt ? `. They reset after ${new Date(resetAt).toLocaleDateString()}.` : "."} Upgrade to keep
                           building.
                         </p>
                       </div>
@@ -777,12 +969,15 @@ export function ImmersiveWorkspace({
             </div>
           </div>
 
-          <div className="shrink-0 border-t border-border/50 bg-background/85 px-2.5 pb-3 pt-2 backdrop-blur-md">
+          <div
+            ref={composerRootRef}
+            className="relative z-30 shrink-0 border-t border-border/50 bg-background/85 px-2.5 pb-3 pt-2 backdrop-blur-md"
+          >
             {showUpgradeCard && !creditError && (
               <div className="mb-2 flex items-center justify-between gap-2 rounded-xl border border-accent/25 bg-gradient-to-r from-accent/[0.07] to-violet-500/[0.05] px-3 py-2.5">
                 <div className="min-w-0">
-                  <p className="text-[11px] font-semibold text-foreground">Build is paused — no tokens left</p>
-                  <p className="text-[10.5px] text-muted-foreground">Upgrade to unlock more monthly tokens.</p>
+                  <p className="text-[11px] font-semibold text-foreground">Build is paused — no credits left</p>
+                  <p className="text-[10.5px] text-muted-foreground">Upgrade to unlock more monthly credits.</p>
                 </div>
                 <Link
                   href="/pricing"
@@ -793,14 +988,37 @@ export function ImmersiveWorkspace({
               </div>
             )}
             <AttachmentRail attachments={attachments} onRemove={removeAttachment} className="mb-1.5" />
+            {submitBlocker && (
+              <div className="mb-2 flex flex-col gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-[11px] text-destructive">
+                <motion.div className="flex items-start gap-2">
+                  <AlertCircle className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.75} />
+                  <p>{submitBlocker}</p>
+                </motion.div>
+                {lastApiStatus?.includes("blocked:auth") && (
+                  <Link
+                    href={`/auth/login?next=${encodeURIComponent(authReturnTo)}`}
+                    className="inline-flex w-fit rounded-lg bg-accent px-2.5 py-1 text-[11px] font-semibold text-white"
+                  >
+                    Sign in
+                  </Link>
+                )}
+              </div>
+            )}
+            {editNeedsApp && mode === "edit" && (
+              <motion.div
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mb-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-900 dark:text-amber-100"
+              >
+                Edit mode needs an app. Switch to Build to create one, or open an existing project.
+              </motion.div>
+            )}
             <form
               ref={formRef}
+              data-testid="create-composer-form"
               className={cn("relative z-10 rounded-xl", modeStyle.composerWrap)}
-              onSubmit={(e) => {
-                e.preventDefault();
-                submitDebug("create", "form submit");
-                void submit("form");
-              }}
+              onSubmitCapture={handleFormSubmitCapture}
+              onSubmit={handleFormSubmit}
             >
               <div className="flex items-center gap-2 border-b border-border/50 px-2.5 py-1">
                 <ModelPicker value={modelId} onChange={setModelId} disabled={isBusy} />
@@ -815,6 +1033,7 @@ export function ImmersiveWorkspace({
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                     e.preventDefault();
+                    uiSubmitLog("create-ui", "enter submit");
                     submitDebug("create", "enter pressed");
                     formRef.current?.requestSubmit();
                   }
@@ -851,16 +1070,32 @@ export function ImmersiveWorkspace({
                   onChange={(e) => e.target.files && onFiles(Array.from(e.target.files))}
                 />
                 <button
-                  type="submit"
-                  aria-disabled={!!submitDisabledReason}
-                  onPointerDown={() => submitDebug("create", "build button clicked")}
-                  onClick={() => {
-                    if (submitDisabledReason) notifySubmitBlocked(submitDisabledReason);
+                  type="button"
+                  data-create-build-btn
+                  data-testid="create-build-button"
+                  aria-busy={isBusy || undefined}
+                  onPointerDownCapture={() => {
+                    setDebugClicked(true);
+                    setSubmitStatusLabel("Pointer down detected");
+                    uiSubmitLog("create-ui", "build pointer down");
+                    submitDebug("create", "button pointer down");
+                  }}
+                  onClickCapture={() => {
+                    setSubmitStatusLabel("Click detected");
+                  }}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setDebugClicked(true);
+                    setSubmitStatusLabel("Click detected");
+                    uiSubmitLog("create-ui", "build click");
+                    submitDebug("create", "button click");
+                    void runSubmitRef.current("button");
                   }}
                   className={cn(
-                    "ml-auto flex h-7 cursor-pointer items-center gap-1.5 rounded-lg px-3 text-[12px] font-semibold transition",
-                    submitDisabledReason
-                      ? "cursor-not-allowed bg-muted text-muted-foreground opacity-50"
+                    "relative z-[60] ml-auto flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-lg px-3 text-[12px] font-semibold transition pointer-events-auto active:scale-[0.98]",
+                    isBusy
+                      ? "bg-muted/80 text-muted-foreground"
                       : mode === "build"
                         ? "bg-gradient-to-r from-accent to-violet-500 text-white shadow-[0_4px_14px_-4px_rgba(30,107,255,0.5)] hover:opacity-90"
                         : "bg-accent text-white hover:bg-accent/90",
@@ -875,15 +1110,37 @@ export function ImmersiveWorkspace({
                 </button>
               </div>
             </form>
-            <ComposerDebugStrip
-              channel="create"
-              inputLen={input.length}
-              mode={mode}
-              disabledReason={submitDisabledReason}
-              tokensStatus={tokensStatus}
-              lastSubmitAt={lastSubmitAt}
-              lastApiStatus={lastApiStatus}
-            />
+            {debugEnabled && (
+              <>
+                <p
+                  data-testid="create-submit-status"
+                  className={cn(
+                    "mt-2 rounded-lg border px-2.5 py-2 text-[12px] font-semibold",
+                    submitStatusLabel.startsWith("Failed")
+                      ? "border-destructive/50 bg-destructive/10 text-destructive"
+                      : "border-border bg-surface text-foreground",
+                  )}
+                >
+                  {submitStatusLabel}
+                </p>
+                <SubmitPipelinePanel channel="create" inputLen={input.length} mode={mode} />
+              </>
+            )}
+            {autoStartFailed && (
+              <div className="mb-2 flex flex-col gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-[11px] text-destructive">
+                <p>{autoStartFailed}</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAutoStartFailed(null);
+                    void runSubmitRef.current("button");
+                  }}
+                  className="w-fit rounded-lg bg-accent px-3 py-1.5 text-[11px] font-semibold text-white"
+                >
+                  Retry build
+                </button>
+              </div>
+            )}
           </div>
         </div>
 

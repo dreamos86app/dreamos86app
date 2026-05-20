@@ -12,9 +12,20 @@ import { calculateTokens } from "@/lib/credits/cost-engine";
 import type { Json } from "@/lib/supabase/types";
 import { loadProfileBillingRow } from "@/lib/supabase/load-profile-billing";
 import { parseFencedFiles } from "@/lib/creation/extract-fenced-code";
+import {
+  extractBuilderMetadata,
+  slugifyAppName,
+} from "@/lib/creation/parse-builder-metadata";
+import { validateGeneratedBuild } from "@/lib/creation/validate-build-quality";
+import { appIconSvgDataUrl } from "@/lib/creation/app-icon-svg";
 import { getAppUrl } from "@/lib/app-url";
 import { allocatePublishedSubdomain } from "@/lib/publish/subdomain";
 import { googleGenerativeApiKey, hasAnyLlmProviderKey } from "@/lib/llm/env-keys";
+import {
+  isAutomaticModelId,
+  resolveAutomaticModelId,
+} from "@/lib/ai/resolve-automatic-model";
+import { estimateProviderCostUsd } from "@/lib/credits/usage-cost";
 
 const MODEL_ID_MAP: Record<string, string> = {
   "claude-opus-4-7": "claude-opus-4-5",
@@ -239,7 +250,12 @@ export async function POST(request: Request) {
   const freePlan = planIsFree(profileRow.plan_id as string | undefined);
   const requestedModel =
     typeof raw.modelId === "string" && raw.modelId.length > 0 ? raw.modelId : undefined;
-  const modelId = freePlan ? pickFreeDiscussModelId() : requestedModel ?? PAID_DEFAULT_MODEL;
+  const modelId = freePlan
+    ? pickFreeDiscussModelId()
+    : isAutomaticModelId(requestedModel)
+      ? resolveAutomaticModelId(mode)
+      : requestedModel ?? resolveAutomaticModelId(mode);
+  const billedModelId = modelId;
 
   let modelMessages: ModelMessage[];
   try {
@@ -467,27 +483,42 @@ export async function POST(request: Request) {
           return;
         }
 
-        const { data: creditResultRaw } = await writer.rpc("consume_credits", {
+        const providerCostUsd = estimateProviderCostUsd(
+          billedModelId,
+          mode,
+          event.usage?.inputTokens ?? null,
+          event.usage?.outputTokens ?? null,
+        );
+
+        const { data: creditResultRaw } = await writer.rpc("charge_tokens", {
           p_user_id: user.id,
           p_amount: tokensNeeded,
-          p_operation_id: opId,
-          p_model_id: modelId,
-          ...(conversationId ? { p_conversation_id: conversationId } : {}),
+          p_reason: `AI ${mode}`,
+          p_idempotency_key: opId,
+          p_metadata: {
+            model_id: billedModelId,
+            mode,
+            conversation_id: conversationId,
+            operation_id: opId,
+            provider_cost_usd: providerCostUsd,
+            automatic: isAutomaticModelId(requestedModel),
+          },
         });
         const creditResult = creditResultRaw as
-          | { success?: boolean; error?: string | null }
+          | { success?: boolean; error?: string | null; idempotent?: boolean }
           | null
           | undefined;
         const charged = Boolean(creditResult?.success);
+        let buildQualityOk = true;
 
         if (creditResult && !creditResult.success && process.env.NODE_ENV !== "production") {
-          console.warn("[chat] consume_credits after stream:", creditResult.error);
+          console.warn("[chat] charge_tokens after stream:", creditResult.error);
         }
 
         await writer.from("ai_usage_logs").insert({
           user_id: user.id,
           user_email: userEmail,
-          model_id: modelId,
+          model_id: billedModelId,
           mode,
           tokens_charged: charged ? tokensNeeded : 0,
           tokens_input: event.usage?.inputTokens ?? null,
@@ -530,6 +561,16 @@ export async function POST(request: Request) {
 
         if (charged && mode === "build" && projectId && event.text) {
           const files = parseFencedFiles(event.text);
+          const quality = validateGeneratedBuild(files);
+          buildQualityOk = quality.ok;
+          const meta = extractBuilderMetadata(event.text);
+          const appName =
+            meta?.app?.name?.trim() ||
+            event.text.match(/##\s*\[planning\][^\n]*\n+([^\n#][^\n]{0,80})/i)?.[1]?.trim() ||
+            null;
+          const appSlug = meta?.app?.slug?.trim() || (appName ? slugifyAppName(appName) : null);
+          const appDescription = meta?.app?.description?.trim() ?? null;
+
           if (files.length > 0) {
             const rows = files.map((f) => ({
               project_id: projectId,
@@ -545,34 +586,76 @@ export async function POST(request: Request) {
               console.warn("[chat] app_files upsert:", afErr.message);
             }
             if (!afErr) {
-              const iconUrl = `${getAppUrl().replace(/\/$/, "")}/api/projects/${projectId}/icon`;
-              const planTitle = event.text.match(/\#\#\s*\[planning\][^\n]*\n+([^\n#][^\n]{0,120})/i);
-              const inferredName = planTitle?.[1]?.trim();
+              const iconApiUrl = `${getAppUrl().replace(/\/$/, "")}/api/projects/${projectId}/icon`;
+              const svgIcon = appName ? appIconSvgDataUrl(appName, meta?.app?.category) : null;
               const { data: curProj } = await writer
                 .from("projects")
-                .select("name")
+                .select("name, slug, metadata")
                 .eq("id", projectId)
                 .maybeSingle();
               const curName = curProj?.name?.trim() ?? "";
               const shouldRename =
-                Boolean(inferredName) && (!curName || /^new app$/i.test(curName));
+                Boolean(appName) && (!curName || /^new app$/i.test(curName) || /^new build$/i.test(curName));
+              const prevMeta =
+                curProj?.metadata && typeof curProj.metadata === "object" && !Array.isArray(curProj.metadata)
+                  ? (curProj.metadata as Record<string, unknown>)
+                  : {};
+              const buildMeta = {
+                ...prevMeta,
+                builder: {
+                  pages: meta?.pages ?? [],
+                  entities: meta?.entities ?? [],
+                  quality,
+                  summary: meta?.summary ?? null,
+                  updated_at: new Date().toISOString(),
+                },
+              };
               await writer
                 .from("projects")
                 .update(
                   {
-                    icon_url: iconUrl,
-                    status: "draft",
-                    ...(shouldRename ? { name: inferredName!.slice(0, 80) } : {}),
+                    icon_url: iconApiUrl,
+                    app_icon_url: svgIcon,
+                    status: quality.ok ? "draft" : "building",
+                    build_status: quality.ok ? "ready" : "failed",
+                    ...(shouldRename && appName ? { name: appName.slice(0, 80) } : {}),
+                    ...(appSlug && shouldRename ? { slug: appSlug.slice(0, 48) } : {}),
+                    ...(appDescription ? { description: appDescription.slice(0, 500) } : {}),
+                    metadata: buildMeta as Json,
                   } as never,
                 )
                 .eq("id", projectId)
                 .eq("owner_id", user.id);
               await allocatePublishedSubdomain(writer, projectId, user.id);
+
+              if (!quality.ok && buildJobId) {
+                await writer
+                  .from("build_jobs")
+                  .update({
+                    status: "failed",
+                    error_message: `Quality check: ${quality.reasons.join("; ")}`,
+                  })
+                  .eq("id", buildJobId);
+              }
+            }
+          }
+
+          if (charged && opId) {
+            const { error: ceErr } = await writer.from("credit_events").insert({
+              user_id: user.id,
+              operation_id: opId,
+              model_id: modelId,
+              credits_consumed: tokensNeeded,
+              event_type: "generation",
+              conversation_id: conversationId ?? null,
+            } as never);
+            if (ceErr && process.env.NODE_ENV !== "production") {
+              console.warn("[chat] credit_events insert:", ceErr.message);
             }
           }
         }
 
-        if (buildJobId && charged) {
+        if (buildJobId && charged && buildQualityOk) {
           await writer
             .from("build_jobs")
             .update({

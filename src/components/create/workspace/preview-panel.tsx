@@ -229,6 +229,7 @@ export function PreviewPanel({
             thinking={thinking}
             assistantText={buildAssistantText}
             tokensEstimate={tokensEstimate}
+            appName={appName}
           />
         )}
 

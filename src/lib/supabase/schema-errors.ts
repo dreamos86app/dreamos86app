@@ -7,3 +7,13 @@ export function isPostgrestSchemaOrMissingTableError(message: string): boolean {
     (m.includes("relation") && m.includes("does not exist"))
   );
 }
+
+/** e.g. Could not find the 'onboarding_answers' column of 'profiles' in the schema cache */
+export function parseMissingProfileColumn(message: string): string | null {
+  const match = message.match(/could not find the '([^']+)' column of 'profiles'/i);
+  return match?.[1] ?? null;
+}
+
+export function isMissingProfileColumnError(message: string): boolean {
+  return parseMissingProfileColumn(message) !== null;
+}

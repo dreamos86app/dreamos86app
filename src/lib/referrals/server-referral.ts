@@ -86,13 +86,20 @@ export async function attachReferralByCode(
     return { ok: true };
   }
 
-  const { error: insErr } = await admin.from("referrals").insert({
-    referrer_id: referrerId,
-    referred_id: referredUserId,
-    code: normalized,
-    status: "pending",
-  });
+  const { error: insErr } = await admin.from("referrals").upsert(
+    {
+      referrer_id: referrerId,
+      referred_id: referredUserId,
+      code: normalized,
+      status: "pending",
+    },
+    { onConflict: "referred_id", ignoreDuplicates: true },
+  );
   if (insErr) {
+    if (insErr.code === "23505" || insErr.message.includes("duplicate key")) {
+      await admin.from("profiles").update({ referred_by: normalized }).eq("id", referredUserId);
+      return { ok: true };
+    }
     return { ok: false, error: "insert_failed" };
   }
 

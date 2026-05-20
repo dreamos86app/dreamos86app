@@ -62,8 +62,13 @@ export async function GET(request: Request) {
       const result = await bootstrapProfileFromOAuth(user, refCookie);
       onboardingCompleted = result.onboardingCompleted;
     }
-  } catch {
-    // Profile bootstrap failed — still send user forward; they can retry from app
+  } catch (bootstrapErr) {
+    if (process.env.NODE_ENV !== "production") {
+      console.warn(
+        "[auth/callback] profile bootstrap:",
+        bootstrapErr instanceof Error ? bootstrapErr.message : bootstrapErr,
+      );
+    }
   }
 
   const safeNext = nextRaw.startsWith("/") ? nextRaw : "/";

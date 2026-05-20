@@ -36,7 +36,7 @@ const pageMeta: Record<string, { title: string; subtitle?: string }> = {
   },
   "/analytics": {
     title: "Analytics",
-    subtitle: "Usage, tokens, and generation insights.",
+    subtitle: "Usage, credits, and generation insights.",
   },
   "/media": {
     title: "Media & Assets",
@@ -68,7 +68,7 @@ const pageMeta: Record<string, { title: string; subtitle?: string }> = {
   },
   "/settings/models": {
     title: "AI Models",
-    subtitle: "Model preferences, routing, and token usage.",
+    subtitle: "Model preferences, routing, and credit usage.",
   },
   "/settings/api-keys": {
     title: "API Keys",
@@ -87,8 +87,8 @@ const pageMeta: Record<string, { title: string; subtitle?: string }> = {
     subtitle: "Choose the plan that fits your ambitions.",
   },
   "/credits": {
-    title: "Token usage",
-    subtitle: "Real-time tracking of your AI token spend.",
+    title: "Credit usage",
+    subtitle: "Real-time tracking of your AI credit spend.",
   },
   "/help": {
     title: "Help Center",
@@ -201,8 +201,10 @@ export function PlatformShell({
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = React.useState(false);
 
+  const isOnboarding = pathname === "/onboarding" || pathname.startsWith("/onboarding/");
   const isCreateHome = pathname === "/" && homeSessionFromServer;
-  const isFullBleed = (pathname === "/" && homeSessionFromServer) || pathname === "/chat";
+  const isFullBleed =
+    isOnboarding || (pathname === "/" && homeSessionFromServer) || pathname === "/chat";
   /** Home scrolls on `main` so the scrollbar sits at the right edge of the content column. */
   const isHomeShellScroll = pathname === "/" && homeSessionFromServer;
   const meta = pageMeta[pathname] ?? { title: "DreamOS86" };
@@ -214,6 +216,17 @@ export function PlatformShell({
   React.useEffect(() => {
     setMobileOpen(false);
   }, [pathname]);
+
+  if (isOnboarding) {
+    return (
+      <div className="relative flex min-h-[100dvh] flex-col overflow-hidden bg-background">
+        <AmbientOrbs />
+        <main className="relative z-[1] flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-4 py-6 sm:px-6">
+          {children}
+        </main>
+      </div>
+    );
+  }
 
   if (minimalHomeChrome) {
     return (

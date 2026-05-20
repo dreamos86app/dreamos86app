@@ -5,6 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
+import { useRouter } from "next/navigation";
 import {
   ChevronDown,
   Zap,
@@ -15,18 +16,20 @@ import {
   TrendingUp,
   Rocket,
   Home,
-  Layers,
   Monitor,
   Code2,
-  Users,
-  BarChart3,
   Globe,
   Plug,
   KeyRound,
-  Shield,
   ScrollText,
-  MoreHorizontal,
+  MessageCircle,
+  LogOut,
+  Boxes,
+  Gift,
+  ScrollText as ChangelogIcon,
 } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
+import { IntegrationIcon } from "@/components/brand/integration-icons";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { useCreditsStore } from "@/lib/stores/credits-store";
@@ -99,11 +102,59 @@ function CreditRing({
   );
 }
 
+interface PlatformDropdownProps {
+  onClose: () => void;
+  anchorRect: DOMRect | null;
+}
+
+function PlatformDropdown({ onClose, anchorRect }: PlatformDropdownProps) {
+  if (!anchorRect) return null;
+
+  const top = anchorRect.bottom + 8;
+  const left = Math.min(anchorRect.left, typeof window !== "undefined" ? window.innerWidth - 240 : anchorRect.left);
+
+  const links = [
+    { href: "/", label: "Home", icon: Home },
+    { href: "/projects", label: "Apps", icon: Boxes },
+    { href: "/chat", label: "AI Chat", icon: MessageCircle },
+    { href: "/changelog", label: "Changelog", icon: ChangelogIcon },
+    { href: "/help", label: "Help", icon: HelpCircle },
+    { href: "/settings", label: "Settings", icon: Settings },
+  ] as const;
+
+  return (
+    <motion.div
+      data-platform-dropdown="true"
+      initial={{ opacity: 0, y: -8, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: -8, scale: 0.98 }}
+      transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+      style={{ position: "fixed", top, left, zIndex: 10000, width: 220 }}
+      className="overflow-hidden rounded-2xl bg-background p-1.5 shadow-[0_24px_64px_-12px_rgba(15,23,42,0.35)] ring-1 ring-border"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <p className="px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">DreamOS86</p>
+      {links.map(({ href, label, icon: Icon }) => (
+        <Link
+          key={href}
+          href={href}
+          onClick={onClose}
+          className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-[12.5px] text-foreground transition hover:bg-surface"
+        >
+          <Icon className="size-3.5 shrink-0 text-accent" strokeWidth={1.65} />
+          {label}
+        </Link>
+      ))}
+    </motion.div>
+  );
+}
+
 interface WorkspaceDropdownProps {
   onClose: () => void;
   anchorRect: DOMRect | null;
   workspaceIconUrl: string | null;
   workspaceInitial: string;
+  workspaceLabel: string;
 }
 
 function WorkspaceDropdown({
@@ -111,8 +162,11 @@ function WorkspaceDropdown({
   anchorRect,
   workspaceIconUrl,
   workspaceInitial,
+  workspaceLabel,
 }: WorkspaceDropdownProps) {
-  const { profile, user } = useAuthStore();
+  const router = useRouter();
+  const supabase = createClient();
+  const { profile, user, reset } = useAuthStore();
   const remaining = useCreditsStore((s) => s.remaining);
   const hydrated = useHydrated();
   const launcherName = resolveDisplayName(profile, user);
@@ -138,16 +192,27 @@ function WorkspaceDropdown({
   const left = Math.min(anchorRect.left, typeof window !== "undefined" ? window.innerWidth - 308 : anchorRect.left);
 
   const panel = (
-    <motion.div
-      data-ws-dropdown="true"
+      <motion.div
+      data-workspace-dropdown="true"
       initial={{ opacity: 0, y: -8, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: -8, scale: 0.98 }}
       transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-      style={{ position: "fixed", top, left, zIndex: 10000, width: 296 }}
-      className="overflow-hidden rounded-2xl bg-background shadow-[0_24px_64px_-12px_rgba(15,23,42,0.35)] ring-1 ring-border"
+      style={{
+        position: "fixed",
+        top,
+        left: Math.max(8, Math.min(left, typeof window !== "undefined" ? window.innerWidth - 304 : left)),
+        zIndex: 10000,
+        width: 296,
+        maxHeight: "min(85vh, 520px)",
+      }}
+      className="flex flex-col overflow-hidden rounded-2xl bg-background shadow-[0_24px_64px_-12px_rgba(15,23,42,0.35)] ring-1 ring-border"
       onClick={(e) => e.stopPropagation()}
     >
+      <motion.div className="border-b border-border/80 px-4 py-2">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Dream Space</p>
+        <p className="mt-0.5 truncate text-[13px] font-semibold text-foreground">{workspaceLabel}</p>
+      </motion.div>
       <div className="border-b border-border px-4 py-3.5">
         <div className="flex items-center gap-3">
           {profile?.avatar_url ? (
@@ -177,7 +242,7 @@ function WorkspaceDropdown({
       {hydrated && (
         <div className="border-b border-border px-4 py-3">
           <div className="mb-2 flex items-center justify-between">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Tokens</p>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Credits</p>
             <Link
               href="/credits"
               onClick={onClose}
@@ -213,20 +278,12 @@ function WorkspaceDropdown({
 
       <div className="p-1.5">
         <Link
-          href="/"
+          href="/projects"
           onClick={onClose}
           className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-[12.5px] font-medium text-foreground transition hover:bg-surface"
         >
-          <Home className="size-3.5 shrink-0 text-accent" strokeWidth={1.65} />
-          Back to workspace home
-        </Link>
-        <Link
-          href="/dashboard"
-          onClick={onClose}
-          className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-[12.5px] text-muted-foreground transition hover:bg-surface hover:text-foreground"
-        >
-          <LayoutGrid className="size-3.5 shrink-0" strokeWidth={1.65} />
-          Hub
+          <LayoutGrid className="size-3.5 shrink-0 text-accent" strokeWidth={1.65} />
+          Your apps
         </Link>
         <Link
           href="/settings"
@@ -234,7 +291,7 @@ function WorkspaceDropdown({
           className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-[12.5px] text-muted-foreground transition hover:bg-surface hover:text-foreground"
         >
           <Settings className="size-3.5 shrink-0" strokeWidth={1.65} />
-          Account & workspace
+          Account & settings
         </Link>
         <Link
           href="/settings/billing"
@@ -245,6 +302,14 @@ function WorkspaceDropdown({
           Billing
         </Link>
         <Link
+          href="/referrals"
+          onClick={onClose}
+          className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-[12.5px] text-muted-foreground transition hover:bg-surface hover:text-foreground"
+        >
+          <Gift className="size-3.5 shrink-0" strokeWidth={1.65} />
+          Referrals
+        </Link>
+        <Link
           href="/help"
           onClick={onClose}
           className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-[12.5px] text-muted-foreground transition hover:bg-surface hover:text-foreground"
@@ -252,6 +317,19 @@ function WorkspaceDropdown({
           <HelpCircle className="size-3.5 shrink-0" strokeWidth={1.65} />
           Help
         </Link>
+        <button
+          type="button"
+          onClick={async () => {
+            onClose();
+            await supabase.auth.signOut().catch(() => {});
+            reset();
+            router.push("/auth/login");
+          }}
+          className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[12.5px] text-muted-foreground transition hover:bg-surface hover:text-foreground"
+        >
+          <LogOut className="size-3.5 shrink-0" strokeWidth={1.65} />
+          Log out
+        </button>
       </div>
 
     </motion.div>
@@ -284,10 +362,12 @@ export function WorkspaceLauncher({
   onAppSection: (section: string) => void;
 }) {
   const { profile, user } = useAuthStore();
-  const [openWs, setOpenWs] = React.useState(false);
-  const [openApp, setOpenApp] = React.useState(false);
+  const [platformMenuOpen, setPlatformMenuOpen] = React.useState(false);
+  const [workspaceMenuOpen, setWorkspaceMenuOpen] = React.useState(false);
+  const [appMenuOpen, setAppMenuOpen] = React.useState(false);
   const [publishOpen, setPublishOpen] = React.useState(false);
   const [publishDraft, setPublishDraft] = React.useState<PublishUiState | null>(null);
+  const [platformRect, setPlatformRect] = React.useState<DOMRect | null>(null);
   const [wsRect, setWsRect] = React.useState<DOMRect | null>(null);
   const [appRect, setAppRect] = React.useState<DOMRect | null>(null);
   const mounted = useHydrated();
@@ -295,6 +375,12 @@ export function WorkspaceLauncher({
   const wsRef = React.useRef<HTMLButtonElement>(null);
   const logoRef = React.useRef<HTMLButtonElement>(null);
   const appRef = React.useRef<HTMLButtonElement>(null);
+
+  const closeAllMenus = React.useCallback(() => {
+    setPlatformMenuOpen(false);
+    setWorkspaceMenuOpen(false);
+    setAppMenuOpen(false);
+  }, []);
 
   const workspaceName = (() => {
     const dn = resolveDisplayName(profile, user);
@@ -311,63 +397,82 @@ export function WorkspaceLauncher({
   }, [project?.metadata]);
 
   React.useEffect(() => {
-    if (!openWs && !openApp) return;
+    if (!platformMenuOpen && !workspaceMenuOpen && !appMenuOpen) return;
     function handler(e: MouseEvent) {
       const target = e.target as Element;
+      const inPlatform =
+        logoRef.current?.contains(target) || !!target.closest("[data-platform-dropdown]");
       const inWs =
-        wsRef.current?.contains(target) ||
-        logoRef.current?.contains(target) ||
-        !!target.closest("[data-ws-dropdown]");
+        wsRef.current?.contains(target) || !!target.closest("[data-workspace-dropdown]");
       const inApp = appRef.current?.contains(target) || !!target.closest("[data-app-dropdown]");
-      if (!inWs) setOpenWs(false);
-      if (!inApp) setOpenApp(false);
+      if (!inPlatform) setPlatformMenuOpen(false);
+      if (!inWs) setWorkspaceMenuOpen(false);
+      if (!inApp) setAppMenuOpen(false);
     }
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [openWs, openApp]);
+  }, [platformMenuOpen, workspaceMenuOpen, appMenuOpen]);
+
+  React.useEffect(() => {
+    if (!platformMenuOpen && !workspaceMenuOpen && !appMenuOpen) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") closeAllMenus();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [platformMenuOpen, workspaceMenuOpen, appMenuOpen, closeAllMenus]);
 
   const appTitle = project?.name ?? "New build";
-  const hasAppIcon = Boolean(project?.icon_url);
+  const showAppMenu = Boolean(project?.id);
   const publishReady = Boolean(project?.id && (project.icon_url || project.preview_url));
-  const siSupabase = "https://cdn.jsdelivr.net/npm/simple-icons@13/icons/supabase.svg";
-  const siGithub = "https://cdn.jsdelivr.net/npm/simple-icons@13/icons/github.svg";
+  const appInitial = (project?.name ?? "A").charAt(0).toUpperCase();
 
   const appSections: Array<{ id: string; label: string; icon: React.ElementType; tab?: WorkspaceRightTab }> = [
-    { id: "overview", label: "Overview", icon: Layers },
     { id: "preview", label: "Preview", icon: Monitor, tab: "preview" },
     { id: "dashboard", label: "Dashboard", icon: LayoutGrid, tab: "dashboard" },
     { id: "code", label: "Code", icon: Code2, tab: "code" },
-    { id: "users", label: "Users", icon: Users },
-    { id: "analytics", label: "Analytics", icon: BarChart3 },
+    { id: "publish", label: "Publish", icon: Rocket },
+    { id: "settings", label: "App settings", icon: Settings },
     { id: "domains", label: "Domains", icon: Globe },
     { id: "integrations", label: "Integrations", icon: Plug },
     { id: "secrets", label: "Secrets", icon: KeyRound },
-    { id: "security", label: "Security", icon: Shield },
     { id: "logs", label: "Logs", icon: ScrollText },
-    { id: "settings", label: "Settings", icon: Settings },
   ];
 
   function handleAppNav(id: string, tab?: WorkspaceRightTab) {
-    setOpenApp(false);
+    setAppMenuOpen(false);
+    if (id === "publish") {
+      setPublishOpen(true);
+      return;
+    }
     if (tab) {
       onRightTab(tab);
       onAppSection(id);
       return;
     }
     toast.info(
-      "Coming soon — needs app management APIs wired to Supabase (users, analytics, secrets, logs).",
+      "Coming soon — needs app management APIs wired to Supabase (domains, integrations, secrets, logs).",
     );
     onAppSection(id);
   }
 
+  const dropdownPlatform = mounted ? (
+    <AnimatePresence>
+      {platformMenuOpen && (
+        <PlatformDropdown onClose={() => setPlatformMenuOpen(false)} anchorRect={platformRect} />
+      )}
+    </AnimatePresence>
+  ) : null;
+
   const dropdownWs = mounted ? (
     <AnimatePresence>
-      {openWs && (
+      {workspaceMenuOpen && (
         <WorkspaceDropdown
-          onClose={() => setOpenWs(false)}
+          onClose={() => setWorkspaceMenuOpen(false)}
           anchorRect={wsRect}
           workspaceIconUrl={workspaceIconUrl}
           workspaceInitial={workspaceInitial}
+          workspaceLabel={workspaceLabel}
         />
       )}
     </AnimatePresence>
@@ -375,7 +480,7 @@ export function WorkspaceLauncher({
 
   const dropdownApp = mounted ? (
     <AnimatePresence>
-      {openApp && appRect && (
+      {appMenuOpen && appRect && (
         <motion.div
           data-app-dropdown
           initial={{ opacity: 0, y: -6 }}
@@ -391,7 +496,9 @@ export function WorkspaceLauncher({
           className="max-h-[min(70vh,520px)] overflow-y-auto rounded-2xl bg-background py-1 shadow-[0_24px_64px_-12px_rgba(15,23,42,0.35)] ring-1 ring-border"
           onClick={(e) => e.stopPropagation()}
         >
-          <p className="px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">App</p>
+          <p className="px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            {project?.name ?? "App"}
+          </p>
           {appSections.map((row) => {
             const Icon = row.icon;
             const disabledDash = row.id === "dashboard" && !project?.id;
@@ -426,20 +533,52 @@ export function WorkspaceLauncher({
             ref={logoRef}
             type="button"
             onClick={() => {
-              if (!openWs && logoRef.current) setWsRect(logoRef.current.getBoundingClientRect());
-              setOpenWs((v) => !v);
-              setOpenApp(false);
+              setWorkspaceMenuOpen(false);
+              setAppMenuOpen(false);
+              if (!platformMenuOpen && logoRef.current) {
+                setPlatformRect(logoRef.current.getBoundingClientRect());
+              }
+              setPlatformMenuOpen((v) => !v);
             }}
             className="group flex size-10 shrink-0 items-center justify-center rounded-xl bg-background/90 p-1.5 ring-1 ring-border/50 transition hover:bg-surface hover:ring-accent/25"
-            aria-label="Workspace menu"
+            aria-label="DreamOS86 platform menu"
+            aria-expanded={platformMenuOpen}
           >
             <LogoIcon size={28} className="opacity-95 transition group-hover:opacity-100" />
           </button>
 
-          {hasAppIcon && project?.icon_url ? (
-            <motion.div layout={false} className="relative flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-background shadow-md ring-2 ring-accent/15">
-              <Image src={project.icon_url} alt="" width={40} height={40} className="size-full object-cover" unoptimized />
-            </motion.div>
+          {showAppMenu ? (
+            <button
+              ref={appRef}
+              type="button"
+              onClick={() => {
+                setPlatformMenuOpen(false);
+                setWorkspaceMenuOpen(false);
+                if (!appMenuOpen && appRef.current) {
+                  setAppRect(appRef.current.getBoundingClientRect());
+                }
+                setAppMenuOpen((v) => !v);
+              }}
+              className={cn(
+                "relative flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-background shadow-md ring-2 transition",
+                appMenuOpen ? "ring-accent/40" : "ring-accent/15 hover:ring-accent/30",
+              )}
+              aria-label={`${appTitle} app menu`}
+              aria-expanded={appMenuOpen}
+            >
+              {project?.icon_url ? (
+                <Image src={project.icon_url} alt="" width={40} height={40} className="size-full object-cover" unoptimized />
+              ) : (
+                <span
+                  className={cn(
+                    "flex size-full items-center justify-center bg-gradient-to-br text-[14px] font-bold text-white",
+                    project?.gradient ?? "from-accent/50 to-violet-500/50",
+                  )}
+                >
+                  {appInitial}
+                </span>
+              )}
+            </button>
           ) : null}
 
           <div className="min-w-0 flex-1">
@@ -448,11 +587,16 @@ export function WorkspaceLauncher({
                 ref={wsRef}
                 type="button"
                 onClick={() => {
-                  if (!openWs && wsRef.current) setWsRect(wsRef.current.getBoundingClientRect());
-                  setOpenWs((v) => !v);
-                  setOpenApp(false);
+                  setPlatformMenuOpen(false);
+                  setAppMenuOpen(false);
+                  if (!workspaceMenuOpen && wsRef.current) {
+                    setWsRect(wsRef.current.getBoundingClientRect());
+                  }
+                  setWorkspaceMenuOpen((v) => !v);
                 }}
                 className="inline-flex max-w-full items-center gap-1 rounded-lg px-1.5 py-0.5 text-[11.5px] font-medium text-muted-foreground transition hover:bg-surface hover:text-foreground"
+                aria-label="Dream Space workspace menu"
+                aria-expanded={workspaceMenuOpen}
               >
                 <span className="truncate">{workspaceLabel}</span>
                 <ChevronDown className="size-3 shrink-0 opacity-60" strokeWidth={2} />
@@ -470,8 +614,7 @@ export function WorkspaceLauncher({
               className="rounded-xl p-2 text-muted-foreground ring-1 ring-border/60 transition hover:bg-surface hover:text-foreground"
               title="Connect Supabase"
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={siSupabase} alt="" className="size-[18px] object-contain" />
+              <IntegrationIcon provider="supabase" size={18} title="Supabase" />
             </button>
             <button
               type="button"
@@ -479,38 +622,15 @@ export function WorkspaceLauncher({
               className="rounded-xl p-2 text-muted-foreground ring-1 ring-border/60 transition hover:bg-surface hover:text-foreground"
               title="Connect GitHub"
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={siGithub} alt="" className="size-[18px] object-contain dark:invert" />
+              <IntegrationIcon provider="github" size={18} title="GitHub" />
             </button>
           </div>
-
-          {project?.id && (
-            <button
-              ref={appRef}
-              type="button"
-              onClick={() => {
-                if (!openApp && appRef.current) setAppRect(appRef.current.getBoundingClientRect());
-                setOpenApp((v) => !v);
-                setOpenWs(false);
-              }}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-[12px] font-semibold ring-1 transition",
-                openApp
-                  ? "bg-surface text-foreground ring-border"
-                  : "bg-background/80 text-muted-foreground ring-border/80 hover:text-foreground hover:ring-accent/30",
-              )}
-            >
-              <MoreHorizontal className="size-3.5" strokeWidth={2} />
-              App
-            </button>
-          )}
 
           <button
             type="button"
             onClick={() => {
+              closeAllMenus();
               setPublishOpen(true);
-              setOpenWs(false);
-              setOpenApp(false);
             }}
             className={cn(
               "inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-[12px] font-semibold transition active:scale-[0.98]",
@@ -539,6 +659,7 @@ export function WorkspaceLauncher({
         </motion.div>
       </div>
 
+      {dropdownPlatform && createPortal(dropdownPlatform, document.body)}
       {dropdownWs && createPortal(dropdownWs, document.body)}
       {dropdownApp && createPortal(dropdownApp, document.body)}
 

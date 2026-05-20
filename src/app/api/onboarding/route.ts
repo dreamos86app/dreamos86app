@@ -1,14 +1,15 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import type { Json } from "@/lib/supabase/types";
 import { z } from "zod";
-import { attachReferralByCode } from "@/lib/referrals/server-referral";
+import { completeOnboardingForUser } from "@/lib/onboarding/complete-onboarding";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
+import { isPostgrestSchemaOrMissingTableError } from "@/lib/supabase/schema-errors";
 
 const bodySchema = z.object({
   hear_about: z.string().min(1).max(120),
   build_first: z.string().min(1).max(120),
   promo_code: z.string().max(16).optional(),
+  replay: z.boolean().optional(),
 });
 
 export async function POST(request: Request) {
@@ -16,97 +17,110 @@ export async function POST(request: Request) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized", code: "unauthorized" }, { status: 401 });
+  }
 
   const json = await request.json().catch(() => null);
   const parsed = bodySchema.safeParse(json);
   if (!parsed.success) {
-    return NextResponse.json({ error: "Invalid request" }, { status: 400 });
+    return NextResponse.json({ error: "Invalid request", code: "invalid_body" }, { status: 400 });
   }
 
-  const { hear_about, build_first, promo_code } = parsed.data;
-  const now = new Date().toISOString();
+  const url = new URL(request.url);
+  const replay =
+    parsed.data.replay === true || url.searchParams.get("replay") === "1";
 
-  const code = promo_code?.trim().toUpperCase() ?? "";
-  if (code) {
-    const applied = await attachReferralByCode(user.id, code);
-    if (!applied.ok && applied.error !== "insert_failed") {
-      const status =
-        applied.error === "code_not_found"
-          ? 404
-          : applied.error === "self_referral" || applied.error === "referral_limit_reached"
-            ? 400
-            : 400;
-      return NextResponse.json({ error: applied.error }, { status });
-    }
-  }
-
-  const onboarding_answers = {
-    hear_about,
-    build_first,
-    promo_code: code || null,
-    completed_at: now,
-  };
-
-  await supabase.from("onboarding").upsert({
-    user_id: user.id,
-    completed_at: now,
-    workspace_name: null,
-    experience_level: null,
-    preferred_model: null,
-    referral_source: hear_about,
-    use_case: build_first,
-    answers: onboarding_answers as Json,
+  const result = await completeOnboardingForUser(user, {
+    hearAbout: parsed.data.hear_about,
+    buildFirst: parsed.data.build_first,
+    promoCode: parsed.data.promo_code,
+    replay,
   });
 
-  const patch = {
-    onboarding_completed: true,
-    onboarding_completed_at: now,
-    onboarding_answers,
-    use_case: build_first,
-    signup_wizard_completed: true,
-  };
-
-  const { error: profileUserErr } = await supabase
-    .from("profiles")
-    .update(patch)
-    .eq("id", user.id);
-
-  if (profileUserErr) {
-    try {
-      const admin = createSupabaseAdmin();
-      const { error: adminErr } = await admin.from("profiles").update(patch).eq("id", user.id);
-      if (adminErr) {
-        return NextResponse.json({ error: adminErr.message }, { status: 500 });
-      }
-    } catch {
-      return NextResponse.json({ error: profileUserErr.message }, { status: 500 });
-    }
+  if (!result.ok) {
+    return NextResponse.json(
+      {
+        error: result.error,
+        code: result.code ?? "onboarding_failed",
+        hint: result.hint,
+      },
+      { status: result.status },
+    );
   }
 
-  await supabase.rpc("claim_referral_reward", {
-    p_referred_id: user.id,
-    p_credits: 20,
+  return NextResponse.json({
+    success: true,
+    already_completed: result.alreadyCompleted === true,
+    referral_claim: result.referralClaim ?? null,
   });
-
-  return NextResponse.json({ success: true });
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized", code: "unauthorized" }, { status: 401 });
+  }
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("onboarding_completed, onboarding_completed_at")
-    .eq("id", user.id)
-    .single();
+  const replay = new URL(request.url).searchParams.get("replay") === "1";
+  if (replay) {
+    return NextResponse.json({ completed: false, replay: true });
+  }
 
-  return NextResponse.json({
-    completed: profile?.onboarding_completed ?? false,
-    completed_at: profile?.onboarding_completed_at,
-  });
+  try {
+    const admin = createSupabaseAdmin();
+    const [{ data: profile, error: profileErr }, { data: onboarding, error: onboardingErr }] =
+      await Promise.all([
+        admin
+          .from("profiles")
+          .select("onboarding_completed, onboarding_completed_at")
+          .eq("id", user.id)
+          .maybeSingle(),
+        admin
+          .from("onboarding")
+          .select("completed_at")
+          .eq("user_id", user.id)
+          .maybeSingle(),
+      ]);
+
+    if (profileErr && isPostgrestSchemaOrMissingTableError(profileErr.message)) {
+      return NextResponse.json(
+        {
+          error: profileErr.message,
+          code: "schema_error",
+          hint: "Apply complete_onboarding_schema migration and NOTIFY pgrst.",
+        },
+        { status: 503 },
+      );
+    }
+
+    if (onboardingErr && isPostgrestSchemaOrMissingTableError(onboardingErr.message)) {
+      return NextResponse.json(
+        {
+          error: onboardingErr.message,
+          code: "schema_error",
+          hint: "public.onboarding table or columns missing — run complete onboarding migration.",
+        },
+        { status: 503 },
+      );
+    }
+
+    const completed =
+      profile?.onboarding_completed === true || Boolean(onboarding?.completed_at);
+
+    return NextResponse.json({
+      completed,
+      completed_at:
+        profile?.onboarding_completed_at ?? onboarding?.completed_at ?? null,
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "service_unavailable";
+    return NextResponse.json(
+      { error: msg, code: "service_role_missing" },
+      { status: 503 },
+    );
+  }
 }

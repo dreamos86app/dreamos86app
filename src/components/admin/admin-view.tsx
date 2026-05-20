@@ -20,6 +20,7 @@ import { DeploymentStatusPanel } from "@/components/admin/deployment-status-pane
 import { ContactRequestsPanel } from "@/components/admin/contact-requests-panel";
 import { AdminUsersPanel } from "@/components/admin/admin-users-panel";
 import { AdminBillingPanel } from "@/components/admin/admin-billing-panel";
+import { AdminAiUsagePanel } from "@/components/admin/admin-ai-usage-panel";
 
 export type AdminTab =
   | "users"
@@ -170,24 +171,7 @@ export function AdminView({ initialTab = "users" }: { initialTab?: AdminTab }) {
       {activeTab === "contacts" && <ContactRequestsPanel />}
       {activeTab === "billing" && <AdminBillingPanel />}
 
-      {activeTab === "ai" && (
-        <div className="space-y-2">
-          {loading ? (
-            <motion.div className="flex justify-center py-8">
-              <Loader2 className="size-5 animate-spin text-muted-foreground" />
-            </motion.div>
-          ) : aiEvents.length === 0 ? (
-            <p className="py-10 text-center text-[13px] text-muted-foreground">No AI usage logged yet</p>
-          ) : (
-            aiEvents.map((ev) => (
-              <div key={ev.id} className="rounded-lg bg-surface px-4 py-3 ring-1 ring-border text-[12px]">
-                <span className="font-medium">{ev.model_id}</span> · {ev.user_email} · {ev.tokens_charged} tokens ·{" "}
-                {ev.status}
-              </div>
-            ))
-          )}
-        </div>
-      )}
+      {activeTab === "ai" && <AdminAiUsagePanel />}
 
       {activeTab === "storage" && (
         <div className="space-y-2">

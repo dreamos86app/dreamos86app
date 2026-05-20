@@ -182,7 +182,7 @@ const PLAN_META: Record<string, { name: string; quota: number; nextPlan: string;
 };
 
 const UPGRADE_PERKS: Record<string, string[]> = {
-  free:     ["Manual model selection", "Edit & Build modes", "Custom domains", "10× more tokens", "Priority generation"],
+  free:     ["Manual model selection", "Edit & Build modes", "Custom domains", "10× more credits", "Priority generation"],
   starter:  ["All frontier models", "Advanced AI generation", "Advanced analytics", "API access", "5 collaborators"],
   pro:      ["Dedicated compute", "Enterprise scale", "White-label", "Custom SLAs", "SSO / SAML"],
   infinity: ["Custom SLAs expansion", "Dedicated runtime", "Priority infra"],
@@ -238,14 +238,14 @@ function OutOfCreditsCard({
             </div>
             <div>
               <div className="flex flex-wrap items-center gap-2">
-                <p className="text-[15px] font-bold text-foreground tracking-tight">You&apos;re out of tokens</p>
+                <p className="text-[15px] font-bold text-foreground tracking-tight">You&apos;re out of credits</p>
                 <span className="rounded-full bg-amber-500/12 px-2 py-0.5 text-[10px] font-semibold text-amber-600 ring-1 ring-amber-500/25 dark:text-amber-400">
                   {meta.name} plan
                 </span>
               </div>
               <p className="mt-1 text-[12.5px] text-muted-foreground leading-relaxed">
-                All <span className="font-semibold text-foreground">{meta.quota.toLocaleString()} tokens</span> used this month.
-                {" "}Tokens refill {resetLabel}.
+                All <span className="font-semibold text-foreground">{meta.quota.toLocaleString()} credits</span> used this month.
+                {" "}Credits refill {resetLabel}.
               </p>
             </div>
           </div>
@@ -262,7 +262,7 @@ function OutOfCreditsCard({
         {/* Token usage meter */}
         <div className="rounded-xl bg-surface/70 px-4 py-3 ring-1 ring-border/60 space-y-2">
           <div className="flex items-center justify-between text-[11.5px]">
-            <span className="font-medium text-muted-foreground">Tokens used this period</span>
+            <span className="font-medium text-muted-foreground">Credits used this period</span>
             <span className="tabular-nums font-bold text-foreground">
               {totalUsed.toLocaleString()} <span className="font-normal text-muted-foreground">/ {meta.quota.toLocaleString()}</span>
             </span>
@@ -277,7 +277,7 @@ function OutOfCreditsCard({
           </div>
           <p className="text-[10.5px] text-muted-foreground/60 flex items-center gap-1">
             <span className="size-1.5 rounded-full bg-amber-500/60 inline-block" />
-            Tokens reset {resetLabel}. Current plan: {meta.name}.
+            Credits reset {resetLabel}. Current plan: {meta.name}.
           </p>
         </div>
 
@@ -294,7 +294,7 @@ function OutOfCreditsCard({
                   <p className="text-[15px] font-bold tracking-tight text-foreground">{meta.nextPlan}</p>
                 </div>
                 <p className="text-[12px] text-muted-foreground">
-                  <span className="font-semibold text-foreground">{meta.nextCredits} tokens</span> per month
+                  <span className="font-semibold text-foreground">{meta.nextCredits} credits</span> per month
                 </p>
               </div>
               <div className="text-right shrink-0">

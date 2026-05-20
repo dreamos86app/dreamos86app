@@ -11,7 +11,7 @@ import {
   ExternalLink,
   Loader2,
   Lock,
-  Sparkles,
+  Rocket,
   AlertTriangle,
   CheckCircle2,
   Wrench,
@@ -241,7 +241,7 @@ export function PublishModal({
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 16 }}
         transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-        className="relative max-h-[min(92vh,760px)] w-full max-w-xl overflow-hidden rounded-[var(--radius-xl)] bg-background shadow-2xl ring-1 ring-border"
+        className="relative flex max-h-[min(92dvh,820px)] w-full max-w-xl flex-col overflow-hidden rounded-[var(--radius-xl)] bg-background shadow-2xl ring-1 ring-border"
         onClick={(e) => e.stopPropagation()}
       >
         <button
@@ -255,7 +255,7 @@ export function PublishModal({
 
         <div className="border-b border-border bg-gradient-to-r from-accent/[0.1] via-background to-violet-500/[0.06] px-5 py-4">
           <div className="flex size-10 items-center justify-center rounded-xl bg-accent/12 ring-1 ring-accent/20">
-            <Sparkles className="size-5 text-accent" strokeWidth={1.65} />
+            <Rocket className="size-5 text-accent" strokeWidth={1.65} />
           </div>
           <h2 id="publish-title" className="mt-3 text-[18px] font-semibold tracking-tight text-foreground">
             Publish
@@ -269,7 +269,7 @@ export function PublishModal({
             <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-900 dark:text-amber-100">
               <Lock className="mt-0.5 size-4 shrink-0" strokeWidth={1.75} />
               <p>
-                Web publish is locked until your app has a generated preview or icon. Run a build first, then return here.
+                Web publish needs generated app files or a working preview. Finish a build, then return here.
               </p>
             </div>
           )}
@@ -301,7 +301,7 @@ export function PublishModal({
           </div>
         </div>
 
-        <div className="max-h-[calc(min(92vh,760px)-200px)] space-y-4 overflow-y-auto px-5 py-4">
+        <motion.div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-5 py-4 pb-12">
           {!projectId && (
             <p className="rounded-lg bg-amber-500/10 px-3 py-2 text-[12px] text-amber-900 dark:text-amber-100 ring-1 ring-amber-500/25">
               Start a build first — publishing attaches to your saved app record.
@@ -581,7 +581,7 @@ export function PublishModal({
             </div>
           )}
 
-        </div>
+        </motion.div>
 
         <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-3">
           <Button type="button" variant="ghost" size="sm" onClick={onClose}>

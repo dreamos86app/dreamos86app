@@ -2,6 +2,7 @@ import type { User } from "@supabase/supabase-js";
 import { readRefCodeFromCookieHeader } from "@/lib/auth/ref-cookie";
 import { createSupabaseAdmin, type SupabaseAdminClient } from "@/lib/supabase/admin";
 import { attachReferralByCode } from "@/lib/referrals/server-referral";
+import { isMissingProfileColumnError } from "@/lib/supabase/schema-errors";
 
 const FREE_TOKENS = 100;
 
@@ -89,9 +90,7 @@ export async function bootstrapProfileFromOAuth(
     const username = await allocateUsername(admin, baseUser);
     const email = user.email ?? "";
 
-    // Supabase generated Insert omits `id` even though profiles.id is required on insert.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error: insertErr } = await (admin.from("profiles") as any).insert({
+    const insertRow: Record<string, unknown> = {
       id: user.id,
       email,
       full_name: displayName,
@@ -123,7 +122,16 @@ export async function bootstrapProfileFromOAuth(
       workspace_icon_url: null,
       workspace_description: null,
       onboarding_answers: {},
-    });
+    };
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let { error: insertErr } = await (admin.from("profiles") as any).insert(insertRow);
+
+    if (insertErr && isMissingProfileColumnError(insertErr.message)) {
+      const { onboarding_answers: _a, ...withoutAnswers } = insertRow;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ({ error: insertErr } = await (admin.from("profiles") as any).insert(withoutAnswers));
+    }
 
     if (insertErr) {
       throw new Error(insertErr.message);
@@ -148,14 +156,7 @@ export async function bootstrapProfileFromOAuth(
   if (!(existing.avatar_url ?? "").trim() && avatarFromOAuth) {
     updates.avatar_url = avatarFromOAuth;
   }
-  if (
-    existing.credits_remaining === null ||
-    existing.credits_remaining === undefined ||
-    Number.isNaN(Number(existing.credits_remaining))
-  ) {
-    updates.credits_remaining = FREE_TOKENS;
-    updates.credits_reset_at = resetAt;
-  }
+  // Never overwrite token balance, plan, or subscription fields on existing profiles.
   if (!existing.plan_id) {
     updates.plan_id = "free";
   }

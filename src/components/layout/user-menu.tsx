@@ -194,7 +194,7 @@ export function UserMenu() {
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
                   <Zap className="size-3.5 shrink-0 text-accent" strokeWidth={1.75} />
-                  Tokens remaining
+                  Credits remaining
                 </div>
                 <span className="text-[13px] font-semibold tabular-nums text-foreground">{remaining.toLocaleString()}</span>
               </div>

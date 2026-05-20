@@ -153,7 +153,15 @@ function FaqItem({ q, a }: { q: string; a: string }) {
   );
 }
 
-function SubscriptionsLockedModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+function SubscriptionsLockedModal({
+  open,
+  onClose,
+  onContactSupport,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onContactSupport: () => void;
+}) {
   if (!open || typeof document === "undefined") return null;
 
   return createPortal(
@@ -194,8 +202,16 @@ function SubscriptionsLockedModal({ open, onClose }: { open: boolean; onClose: (
           <Button type="button" variant="accent" size="sm" onClick={onClose}>
             Got it
           </Button>
-          <Button type="button" variant="secondary" size="sm" asChild>
-            <Link href="/contact?reason=Support">Contact form</Link>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              onClose();
+              onContactSupport();
+            }}
+          >
+            Contact form
           </Button>
         </div>
       </motion.div>
@@ -955,7 +971,11 @@ export function PricingView() {
 
     </div>
 
-    <SubscriptionsLockedModal open={paidLockedOpen} onClose={() => setPaidLockedOpen(false)} />
+    <SubscriptionsLockedModal
+      open={paidLockedOpen}
+      onClose={() => setPaidLockedOpen(false)}
+      onContactSupport={() => openContact("support")}
+    />
     <ContactSalesModal
       key={contactModalKey}
       kind={contactKind}

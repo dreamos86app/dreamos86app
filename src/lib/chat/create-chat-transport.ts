@@ -17,11 +17,15 @@ export function createDreamChatTransport({
   getBody,
   on402,
   onSuccess,
+  onFetchStart,
+  onFetchEnd,
   label,
 }: {
   getBody: () => ChatTransportBody;
   on402?: () => void;
   onSuccess?: () => void;
+  onFetchStart?: (url: string) => void;
+  onFetchEnd?: (status: number) => void;
   label?: string;
 }) {
   return new DefaultChatTransport<UIMessage>({
@@ -31,6 +35,8 @@ export function createDreamChatTransport({
         label: label ?? "chat",
         on402,
         onSuccess,
+        onFetchStart,
+        onFetchEnd,
       }),
     prepareSendMessagesRequest: ({ id, messages, body, trigger, messageId }) => {
       const extra = getBody();

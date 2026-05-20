@@ -19,7 +19,7 @@ import type { Notification } from "@/lib/supabase/types";
 import { ReferralCapture } from "@/components/referrals/referral-capture";
 import { CommandCenter } from "@/components/command/command-center";
 import { AuthStateDebug } from "@/components/dev/auth-state-debug";
-import { hasActiveSession } from "@/lib/auth/client-identity";
+import { hasActiveSession, isStalePersistedProfile } from "@/lib/auth/client-identity";
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -174,16 +174,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     let disposeRealtime: (() => void) | undefined;
 
-    void supabase.auth.getSession().then(async ({ data: { session } }) => {
+    void supabase.auth.getUser().then(async ({ data: { user: liveUser } }) => {
+      const { data: { session } } = await supabase.auth.getSession();
       setSession(session);
-      setUser(session?.user ?? null);
+      setUser(liveUser ?? null);
 
-      if (session?.user) {
-        const persisted = useAuthStore.getState().profile;
-        if (persisted && persisted.id !== session.user.id) {
+      const persisted = useAuthStore.getState().profile;
+      if (isStalePersistedProfile(session, persisted, liveUser)) {
+        setProfile(null);
+      }
+
+      if (liveUser) {
+        if (persisted && persisted.id !== liveUser.id) {
           setProfile(null);
         }
-        const dispose = await bootstrapUser(session.user.id);
+        const dispose = await bootstrapUser(liveUser.id);
         disposeRealtime = dispose;
       } else {
         setProfile(null);
@@ -240,16 +245,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         syncCredits(session.user.id);
       }
 
-      if (
-        (event === "INITIAL_SESSION" || event === "TOKEN_REFRESHED") &&
-        !session?.user
-      ) {
-        setProfile(null);
-        try {
-          void useAuthStore.persist.clearStorage();
-        } catch {
-          /* ignore */
-        }
+      if (event === "INITIAL_SESSION" || event === "TOKEN_REFRESHED") {
+        void supabase.auth.getUser().then(({ data: { user: u } }) => {
+          if (!u) {
+            setProfile(null);
+            try {
+              void useAuthStore.persist.clearStorage();
+            } catch {
+              /* ignore */
+            }
+          }
+        });
       }
     });
 

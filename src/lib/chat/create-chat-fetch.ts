@@ -7,6 +7,8 @@ export type ChatFetchOptions = {
   on402?: () => void;
   onSuccess?: () => void;
   onErrorMessage?: (message: string) => void;
+  onFetchStart?: (url: string) => void;
+  onFetchEnd?: (status: number) => void;
 };
 
 async function parseApiError(res: Response): Promise<string> {
@@ -39,10 +41,19 @@ export async function createChatFetch(
   options: ChatFetchOptions = {},
 ): Promise<Response> {
   const label = options.label ?? "chat";
-  const url = typeof reqInput === "string" ? reqInput : "request";
+  const url =
+    typeof reqInput === "string"
+      ? reqInput
+      : reqInput instanceof URL
+        ? reqInput.toString()
+        : reqInput instanceof Request
+          ? reqInput.url
+          : "/api/chat";
+
+  options.onFetchStart?.(url);
 
   if (process.env.NODE_ENV !== "production") {
-    console.info(`[${label}] fetch →`, url);
+    console.info(`[${label}] fetch start:`, url);
   }
 
   const res = await globalThis.fetch(reqInput as RequestInfo, {
@@ -50,13 +61,15 @@ export async function createChatFetch(
     credentials: "include",
   });
 
+  options.onFetchEnd?.(res.status);
+
   if (process.env.NODE_ENV !== "production") {
-    console.info(`[${label}] ←`, res.status, res.statusText);
+    console.info(`[${label}] response status`, res.status, res.statusText);
   }
 
   if (res.status === 402) {
     options.on402?.();
-    const msg = "Not enough tokens for this request.";
+    const msg = "Not enough credits for this request.";
     options.onErrorMessage?.(msg);
     toast.error(msg);
     throw new Error(msg);

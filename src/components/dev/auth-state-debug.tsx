@@ -7,13 +7,14 @@ import {
   isStalePersistedProfile,
   resolveAccountEmail,
 } from "@/lib/auth/client-identity";
+import { isSubmitDebugEnabled } from "@/lib/dev/submit-debug-enabled";
 
-/** Dev-only: surfaces auth/profile/session alignment (no secrets). */
+/** Hidden by default — enable with ?debug=submit or NEXT_PUBLIC_SUBMIT_DEBUG=true */
 export function AuthStateDebug() {
   const { user, session, profile, loading } = useAuthStore();
   const [open, setOpen] = React.useState(false);
 
-  if (process.env.NODE_ENV === "production") return null;
+  if (!isSubmitDebugEnabled(null, profile?.email ?? user?.email ?? null)) return null;
 
   const email = resolveAccountEmail(user, profile);
   const dreamSpace = profile?.workspace_name?.trim() || "(none)";

@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import type { Tables } from "@/lib/supabase/types";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { toast } from "@/lib/toast";
+import { createClient } from "@/lib/supabase/client";
 
 type ProjectRow = Pick<
   Tables<"projects">,
@@ -21,8 +22,33 @@ export function AppDashboardPanel({
   isBusy: boolean;
 }) {
   const { profile } = useAuthStore();
+  const supabase = React.useMemo(() => createClient(), []);
   const planId = profile?.plan_id ?? "free";
   const [wrapBusy, setWrapBusy] = React.useState<string | null>(null);
+  const [filePaths, setFilePaths] = React.useState<string[]>([]);
+  const [filesLoading, setFilesLoading] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!project?.id) {
+      setFilePaths([]);
+      return;
+    }
+    let cancelled = false;
+    setFilesLoading(true);
+    void supabase
+      .from("app_files")
+      .select("path")
+      .eq("project_id", project.id)
+      .order("path")
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (!error && data) setFilePaths(data.map((r) => r.path));
+        setFilesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [project?.id, isBusy, supabase]);
 
   async function runWrapJob(kind: "web_zip" | "web_deploy" | "android_apk" | "android_aab") {
     if (!project?.id) return;
@@ -84,6 +110,15 @@ export function AppDashboardPanel({
   const publish = meta.publish_ui && typeof meta.publish_ui === "object"
     ? (meta.publish_ui as Record<string, unknown>)
     : null;
+  const builder =
+    meta.builder && typeof meta.builder === "object" && !Array.isArray(meta.builder)
+      ? (meta.builder as Record<string, unknown>)
+      : null;
+  const builderPages = Array.isArray(builder?.pages) ? (builder.pages as string[]) : [];
+  const builderEntities = Array.isArray(builder?.entities) ? (builder.entities as string[]) : [];
+  const pageFiles = filePaths.filter(
+    (p) => /\/(page|pages)\//i.test(p) || /page\.(tsx|jsx|html)$/i.test(p),
+  );
 
   return (
     <div className="space-y-4 p-4">

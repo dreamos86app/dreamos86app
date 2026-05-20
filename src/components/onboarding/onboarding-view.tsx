@@ -8,12 +8,12 @@ import {
   ArrowLeft,
   Check,
   Loader2,
-  Sparkles,
   Lock,
+  Rocket,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { variants, transition } from "@/lib/motion";
+import { transition } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { resolveDisplayName } from "@/lib/profile-display";
@@ -22,6 +22,8 @@ import {
   readReferralCodeFromBrowserCookie,
   DREAMOS_REF_STORAGE_KEY,
 } from "@/lib/auth/ref-cookie";
+import { DreamOsSetupIcon } from "@/components/onboarding/dreamos-setup-icon";
+import { LogoIcon } from "@/components/ui/logo-icon";
 
 const HEAR_ABOUT = [
   { id: "friend", label: "Friend / referral" },
@@ -30,16 +32,6 @@ const HEAR_ABOUT = [
   { id: "google", label: "Google search" },
   { id: "x", label: "X / Twitter" },
   { id: "other_hear", label: "Other" },
-];
-
-const BUILD_FIRST = [
-  { id: "saas_dashboard", label: "SaaS dashboard" },
-  { id: "ai_chatbot", label: "AI chatbot" },
-  { id: "ecommerce", label: "E-commerce" },
-  { id: "marketplace", label: "Marketplace" },
-  { id: "social", label: "Social app" },
-  { id: "internal", label: "Internal tool" },
-  { id: "other_build", label: "Other" },
 ];
 
 const TOTAL_STEPS = 4;
@@ -51,9 +43,9 @@ export function OnboardingView() {
 
   const [step, setStep] = React.useState(1);
   const [hearAbout, setHearAbout] = React.useState<string | null>(null);
-  const [buildFirst, setBuildFirst] = React.useState<string | null>(null);
   const [promoInput, setPromoInput] = React.useState("");
   const [promoLocked, setPromoLocked] = React.useState(false);
+  const [referralFromUrl, setReferralFromUrl] = React.useState(false);
   const [promoError, setPromoError] = React.useState<string | null>(null);
   const [validatingPromo, setValidatingPromo] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
@@ -64,15 +56,17 @@ export function OnboardingView() {
 
   React.useEffect(() => {
     try {
-      const params = new URLSearchParams(window.location.search);
-      const ref = params.get("ref")?.trim().toUpperCase();
+      const ref = searchParams.get("ref")?.trim().toUpperCase();
       if (ref && ref.length >= 4 && ref.length <= 16) {
         persistReferralCodeForBrowser(ref);
+        setPromoInput(ref);
+        setPromoLocked(true);
+        setReferralFromUrl(true);
       }
     } catch {
       /* ignore */
     }
-  }, []);
+  }, [searchParams]);
 
   React.useEffect(() => {
     const fromProfile = profile?.referred_by?.trim().toUpperCase() ?? "";
@@ -83,6 +77,7 @@ export function OnboardingView() {
       if (locked) {
         setPromoInput(locked);
         setPromoLocked(true);
+        if (searchParams.get("ref")) setReferralFromUrl(true);
       }
     } catch {
       if (fromProfile || fromCookie) {
@@ -90,7 +85,7 @@ export function OnboardingView() {
         setPromoLocked(Boolean(fromProfile || fromCookie));
       }
     }
-  }, [profile?.referred_by]);
+  }, [profile?.referred_by, searchParams]);
 
   React.useEffect(() => {
     if (!profile?.onboarding_completed || replay) return;
@@ -108,7 +103,7 @@ export function OnboardingView() {
       if (!promoInput.trim()) return true;
       return !promoError;
     }
-    if (step === 4) return Boolean(buildFirst);
+    if (step === 4) return true;
     return false;
   }
 
@@ -152,15 +147,15 @@ export function OnboardingView() {
     setSaveError(null);
     try {
       const hearLabel = HEAR_ABOUT.find((h) => h.id === hearAbout)?.label ?? hearAbout ?? "";
-      const buildLabel = BUILD_FIRST.find((b) => b.id === buildFirst)?.label ?? buildFirst ?? "";
 
       const res = await fetch("/api/onboarding", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          hear_about: hearLabel,
-          build_first: buildLabel,
+          hear_about: hearLabel || "Not specified",
+          build_first: "Getting started",
           promo_code: promoInput.trim() || undefined,
+          replay: replay,
         }),
       });
 
@@ -180,7 +175,7 @@ export function OnboardingView() {
           ...profile,
           onboarding_completed: true,
           onboarding_completed_at: new Date().toISOString(),
-          use_case: buildLabel,
+          use_case: "Getting started",
           signup_wizard_completed: true,
         });
       }
@@ -204,30 +199,29 @@ export function OnboardingView() {
   const steps = [
     {
       title: "Welcome to DreamOS86",
-      subtitle: "Let’s personalize your workspace in a minute.",
+      subtitle: "A quick setup, then you can start building.",
       content: (
-        <div className="space-y-5">
-          <div className="flex items-center gap-4">
+        <div className="space-y-6">
+          <motion.div className="flex items-center gap-4">
             {avatarUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={avatarUrl}
                 alt=""
-                className="size-14 shrink-0 rounded-full object-cover ring-1 ring-border"
+                className="size-16 shrink-0 rounded-2xl object-cover ring-1 ring-border"
               />
             ) : (
-              <div className="flex size-14 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-accent/40 to-violet-500/50 text-lg font-bold text-white">
+              <div className="flex size-16 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-accent/30 to-violet-500/40 text-xl font-bold text-white ring-1 ring-border">
                 {displayName.charAt(0).toUpperCase()}
               </div>
             )}
             <div className="min-w-0">
-              <p className="truncate text-[15px] font-semibold text-foreground">{displayName}</p>
-              <p className="truncate text-[12px] text-muted-foreground">{email}</p>
+              <p className="truncate text-[17px] font-semibold text-foreground">{displayName}</p>
+              <p className="truncate text-[13px] text-muted-foreground">{email}</p>
             </div>
-          </div>
-          <p className="text-[13px] leading-relaxed text-muted-foreground">
-            DreamOS86 helps you design and ship real apps with AI — faster, with a premium builder
-            experience.
+          </motion.div>
+          <p className="text-[14px] leading-relaxed text-muted-foreground">
+            DreamOS86 is your workspace to plan, build, preview, and publish real apps with AI — without juggling a dozen tools.
           </p>
         </div>
       ),
@@ -236,14 +230,14 @@ export function OnboardingView() {
       title: "How did you hear about us?",
       subtitle: "Pick the closest match.",
       content: (
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
           {HEAR_ABOUT.map((opt) => (
             <button
               key={opt.id}
               type="button"
               onClick={() => setHearAbout(opt.id)}
               className={cn(
-                "flex items-center gap-3 rounded-[var(--radius-lg)] px-4 py-3 text-left text-[13px] font-medium ring-1 transition",
+                "flex items-center gap-3 rounded-xl px-4 py-3.5 text-left text-[14px] font-medium ring-1 transition",
                 hearAbout === opt.id
                   ? "bg-accent/10 ring-accent/35 text-foreground"
                   : "bg-surface ring-border text-foreground/90 hover:ring-accent/18",
@@ -267,9 +261,14 @@ export function OnboardingView() {
       title: "Promo / referral code",
       subtitle: promoLocked
         ? "This code was applied from your invite link."
-        : "Optional — enter a friend’s code if you have one.",
+        : "Optional — enter a friend’s code for +20 credits each after you finish.",
       content: (
         <div className="space-y-3">
+          {referralFromUrl && promoLocked ? (
+            <p className="rounded-lg bg-accent/10 px-3 py-2 text-[12px] font-medium text-accent ring-1 ring-accent/20">
+              Referral code applied.
+            </p>
+          ) : null}
           <div className="relative">
             <Input
               value={promoInput}
@@ -283,43 +282,33 @@ export function OnboardingView() {
               }}
               placeholder="e.g. ABC12XYZ"
               disabled={promoLocked}
-              className={cn("pr-10 font-mono text-[13px] uppercase", promoLocked && "opacity-90")}
+              readOnly={promoLocked}
+              className={cn("h-12 pr-10 font-mono text-[14px] uppercase", promoLocked && "opacity-90")}
             />
             {promoLocked ? (
-              <Lock className="absolute right-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Lock className="absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             ) : null}
           </div>
           {validatingPromo ? (
-            <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-              <Loader2 className="size-3 animate-spin" /> Validating…
+            <p className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
+              <Loader2 className="size-3.5 animate-spin" /> Validating…
             </p>
           ) : null}
-          {promoError ? (
-            <p className="text-[12px] text-destructive">{promoError}</p>
-          ) : null}
+          {promoError ? <p className="text-[13px] text-destructive">{promoError}</p> : null}
         </div>
       ),
     },
     {
-      title: "What do you want to build first?",
-      subtitle: "We’ll tune defaults to match.",
+      title: "You’re ready to build",
+      subtitle: "Finish setup and open your workspace.",
       content: (
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {BUILD_FIRST.map((opt) => (
-            <button
-              key={opt.id}
-              type="button"
-              onClick={() => setBuildFirst(opt.id)}
-              className={cn(
-                "rounded-[var(--radius-lg)] px-4 py-3 text-left text-[13px] font-medium ring-1 transition",
-                buildFirst === opt.id
-                  ? "bg-accent/10 ring-accent/35 text-foreground"
-                  : "bg-surface ring-border text-foreground/90 hover:ring-accent/18",
-              )}
-            >
-              {opt.label}
-            </button>
-          ))}
+        <div className="space-y-4 rounded-xl border border-accent/20 bg-accent/[0.06] p-5 text-center">
+          <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-accent/15 text-accent ring-1 ring-accent/25">
+            <Rocket className="size-7" strokeWidth={1.65} />
+          </div>
+          <p className="text-[14px] leading-relaxed text-muted-foreground">
+            Your account is set up. Start with Create to describe an app, or open AI Chat to explore models — credits are only used after successful AI steps.
+          </p>
         </div>
       ),
     },
@@ -328,55 +317,66 @@ export function OnboardingView() {
   const isLast = step === TOTAL_STEPS;
 
   return (
-    <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-12">
-      <motion.div
-        variants={variants.fadeUp}
-        initial="hidden"
-        animate="show"
-        className="w-full max-w-lg"
-      >
-        <div className="mb-6 flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.12em] text-accent">
-          <Sparkles className="size-3.5" strokeWidth={1.75} />
-          Onboarding · step {step} of {TOTAL_STEPS}
+    <div className="flex min-h-[100dvh] flex-col items-center justify-center px-4 py-10 sm:px-6">
+      <div className="mb-8 flex items-center gap-2.5">
+        <LogoIcon size={36} />
+        <span className="text-[15px] font-semibold tracking-tight text-foreground">DreamOS86</span>
+      </div>
+
+      <div className="w-full max-w-lg sm:max-w-2xl">
+        <div className="mb-6 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.12em] text-accent">
+            <DreamOsSetupIcon className="size-5 text-accent" />
+            Setup · {step} / {TOTAL_STEPS}
+          </div>
+          <div className="flex gap-1">
+            {Array.from({ length: TOTAL_STEPS }).map((_, i) => (
+              <span
+                key={i}
+                className={cn(
+                  "h-1 w-8 rounded-full transition-colors",
+                  i < step ? "bg-accent" : "bg-muted",
+                )}
+              />
+            ))}
+          </div>
         </div>
 
-        <div className="overflow-hidden rounded-[var(--radius-xl)] bg-glass shadow-[var(--shadow-glass)] ring-1 ring-border p-8">
+        <div className="overflow-hidden rounded-2xl bg-background/95 p-6 shadow-[0_24px_80px_-32px_rgba(15,23,42,0.2)] ring-1 ring-border sm:p-10 md:p-12">
           <AnimatePresence mode="wait">
             <motion.div
               key={step}
-              initial={{ opacity: 0, x: 10 }}
+              initial={{ opacity: 0, x: 12 }}
               animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -10 }}
+              exit={{ opacity: 0, x: -12 }}
               transition={transition.card}
             >
-              <h1 className="text-[22px] font-semibold tracking-[-0.04em] text-foreground">
+              <h1 className="text-[24px] font-semibold tracking-tight text-foreground sm:text-[28px]">
                 {steps[step - 1].title}
               </h1>
-              <p className="mt-1.5 text-[13px] text-muted-foreground">{steps[step - 1].subtitle}</p>
-              <div className="mt-7">{steps[step - 1].content}</div>
+              <p className="mt-2 text-[14px] text-muted-foreground">{steps[step - 1].subtitle}</p>
+              <div className="mt-8">{steps[step - 1].content}</div>
             </motion.div>
           </AnimatePresence>
 
-          {saveError ? (
-            <p className="mt-5 text-[12px] text-destructive">{saveError}</p>
-          ) : null}
+          {saveError ? <p className="mt-6 text-[13px] text-destructive">{saveError}</p> : null}
 
-          <div className="mt-8 flex items-center justify-between gap-3">
+          <div className="mt-10 flex items-center justify-between gap-3">
             <Button
               type="button"
               variant="ghost"
-              size="sm"
+              size="md"
               className={cn(step === 1 && "invisible")}
               onClick={() => setStep((s) => Math.max(1, s - 1))}
               disabled={saving}
             >
-              <ArrowLeft className="size-3.5" strokeWidth={1.75} /> Back
+              <ArrowLeft className="size-4" strokeWidth={1.75} /> Back
             </Button>
             <Button
               type="button"
               variant="accent"
-              size="sm"
-              className="gap-1.5"
+              size="md"
+              className="min-h-[44px] gap-2 px-6"
               disabled={!canAdvance() || saving || (step === 3 && Boolean(promoError))}
               onClick={() => {
                 void (async () => {
@@ -390,21 +390,21 @@ export function OnboardingView() {
             >
               {saving ? (
                 <>
-                  <Loader2 className="size-3.5 animate-spin" /> Saving…
+                  <Loader2 className="size-4 animate-spin" /> Saving…
                 </>
               ) : isLast ? (
                 <>
-                  Finish <Check className="size-3.5" strokeWidth={1.75} />
+                  Start building <Check className="size-4" strokeWidth={1.75} />
                 </>
               ) : (
                 <>
-                  Continue <ArrowRight className="size-3.5" strokeWidth={1.75} />
+                  Continue <ArrowRight className="size-4" strokeWidth={1.75} />
                 </>
               )}
             </Button>
           </div>
         </div>
-      </motion.div>
+      </div>
     </div>
   );
 }

@@ -257,7 +257,11 @@ export function ProjectsView() {
                 <button
                   key={idea.label}
                   type="button"
-                  onClick={() => router.push(`/create?prompt=${encodeURIComponent(idea.prompt)}&mode=build`)}
+                  onClick={() =>
+                    router.push(
+                      `/create?prompt=${encodeURIComponent(idea.prompt)}&mode=build&autostart=1`,
+                    )
+                  }
                   className="rounded-xl bg-surface p-4 text-left ring-1 ring-border transition hover:ring-accent/30 hover:bg-surface/80"
                 >
                   <p className="text-[13px] font-semibold text-foreground">{idea.label}</p>

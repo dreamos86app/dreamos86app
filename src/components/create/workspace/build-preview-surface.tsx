@@ -10,11 +10,13 @@ export function BuildPreviewSurface({
   thinking,
   assistantText,
   tokensEstimate,
+  appName,
   className,
 }: {
   thinking: boolean;
   assistantText: string;
   tokensEstimate: number | null;
+  appName?: string | null;
   className?: string;
 }) {
   const plan = React.useMemo(
@@ -76,7 +78,11 @@ export function BuildPreviewSurface({
                 DreamOS86
               </p>
               <p className="mt-2 max-w-sm text-[15px] font-medium tracking-tight text-foreground">
-                Ready to architect, build, and deploy.
+                {thinking
+                  ? appName
+                    ? `Building ${appName}…`
+                    : "Building your app…"
+                  : "Ready to architect, build, and deploy."}
               </p>
             </div>
             <div className="flex items-center gap-2 rounded-full border border-accent/15 bg-white/70 px-3 py-1.5 text-[11px] font-medium text-muted-foreground shadow-sm backdrop-blur-md dark:bg-surface/80">
@@ -118,7 +124,7 @@ export function BuildPreviewSurface({
               )}
               {tokensEstimate != null && (
                 <p className="mt-3 text-[11px] tabular-nums text-muted-foreground">
-                  Estimated tokens for this model/mode:{" "}
+                  Estimated credits for this model/mode:{" "}
                   <span className="font-semibold text-foreground">{tokensEstimate}</span>
                 </p>
               )}

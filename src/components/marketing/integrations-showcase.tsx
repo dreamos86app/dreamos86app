@@ -1,34 +1,27 @@
 "use client";
 
-import * as React from "react";
 import { motion } from "framer-motion";
 import { Plug } from "lucide-react";
+import { IntegrationIconWell } from "@/components/brand/integration-icons";
 import { variants } from "@/lib/motion";
 import { cn } from "@/lib/utils";
-
-/** Simple Icons (MIT) — static CDN SVGs, no npm dep */
-const SI_V = "13";
-const si = (slug: string) =>
-  `https://cdn.jsdelivr.net/npm/simple-icons@${SI_V}/icons/${slug}.svg`;
 
 export interface IntegrationShowcaseItem {
   name: string;
   desc: string;
   slug: string;
-  /** Optional Tailwind classes on icon wrapper */
   iconWrap?: string;
 }
 
-/** Read-only list for marketing / settings (real connections are per-app in dashboards). */
 export const INTEGRATION_SHOWCASE_ITEMS: IntegrationShowcaseItem[] = [
-  { name: "Supabase", desc: "Database, Auth, Storage, Realtime", slug: "supabase", iconWrap: "bg-[#3ECF8E]/15" },
-  { name: "Stripe", desc: "Payments, subscriptions, billing", slug: "stripe", iconWrap: "bg-[#635BFF]/12" },
-  { name: "GitHub", desc: "Source control, CI/CD", slug: "github", iconWrap: "bg-foreground/8 dark:bg-white/10" },
-  { name: "Vercel", desc: "Deployment and edge network", slug: "vercel", iconWrap: "bg-foreground/8 dark:bg-white/10" },
-  { name: "Resend", desc: "Transactional email delivery", slug: "resend", iconWrap: "bg-foreground/6" },
-  { name: "Slack", desc: "Notifications and webhooks", slug: "slack", iconWrap: "bg-[#4A154B]/12" },
-  { name: "OpenAI", desc: "AI completions and embeddings", slug: "openai", iconWrap: "bg-[#10A37F]/12" },
-  { name: "Gemini", desc: "Google multimodal models", slug: "googlegemini", iconWrap: "bg-[#4285F4]/12" },
+  { name: "Supabase", desc: "Database, Auth, Storage, Realtime", slug: "supabase" },
+  { name: "Stripe", desc: "Payments, subscriptions, billing", slug: "stripe" },
+  { name: "GitHub", desc: "Source control, CI/CD", slug: "github" },
+  { name: "Vercel", desc: "Deployment and edge network", slug: "vercel" },
+  { name: "Resend", desc: "Transactional email delivery", slug: "resend" },
+  { name: "Slack", desc: "Notifications and webhooks", slug: "slack" },
+  { name: "OpenAI", desc: "AI completions and embeddings", slug: "openai" },
+  { name: "Gemini", desc: "Google multimodal models", slug: "gemini" },
 ];
 
 function BrandIcon({
@@ -37,47 +30,13 @@ function BrandIcon({
   dense,
   iconWrap,
 }: IntegrationShowcaseItem & { dense: boolean }) {
-  const [failed, setFailed] = React.useState(false);
-  const size = dense ? 28 : 40;
-
-  if (failed) {
-    return (
-      <div
-        className={cn(
-          "flex shrink-0 items-center justify-center rounded-xl bg-muted font-bold text-muted-foreground ring-1 ring-border",
-          dense ? "size-7 text-[9px]" : "size-10 text-[11px]",
-        )}
-        aria-hidden
-      >
-        {name.slice(0, 2).toUpperCase()}
-      </div>
-    );
-  }
-
   return (
-    <div
-      className={cn(
-        "flex shrink-0 items-center justify-center rounded-xl ring-1 ring-border/60 shadow-sm",
-        dense ? "size-7 p-1" : "size-10 p-2",
-        iconWrap ?? "bg-background",
-      )}
-    >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={si(slug)}
-        width={size}
-        height={size}
-        alt=""
-        className={cn(
-          "size-full object-contain",
-          slug === "github" && "dark:invert",
-          slug === "vercel" && "dark:invert",
-          slug === "resend" && "dark:invert",
-        )}
-        loading="lazy"
-        onError={() => setFailed(true)}
-      />
-    </div>
+    <IntegrationIconWell
+      provider={slug}
+      size={dense ? "sm" : "md"}
+      wellClassName={iconWrap}
+      title={name}
+    />
   );
 }
 
@@ -89,7 +48,7 @@ export function IntegrationShowcaseGrid({
   dense?: boolean;
 }) {
   return (
-    <div
+    <motion.div
       className={`grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 ${className}`}
     >
       {INTEGRATION_SHOWCASE_ITEMS.map((intg, i) => (
@@ -104,9 +63,9 @@ export function IntegrationShowcaseGrid({
               : "group relative flex flex-col gap-2 overflow-hidden rounded-2xl bg-gradient-to-br from-surface to-background p-4 ring-1 ring-border transition hover:ring-accent/30 hover:shadow-lg"
           }
         >
-          <div className="flex items-center gap-3">
+          <motion.div className="flex items-center gap-3">
             <BrandIcon {...intg} dense={dense} />
-            <div className="min-w-0">
+            <motion.div className="min-w-0 flex-1">
               <p className={`font-semibold text-foreground ${dense ? "text-[12.5px]" : "text-[14px]"}`}>
                 {intg.name}
               </p>
@@ -115,11 +74,11 @@ export function IntegrationShowcaseGrid({
               >
                 {intg.desc}
               </p>
-            </div>
-          </div>
+            </motion.div>
+          </motion.div>
         </motion.div>
       ))}
-    </div>
+    </motion.div>
   );
 }
 
@@ -132,27 +91,27 @@ export function IntegrationShowcaseSection({ variant = "default" }: { variant?: 
       animate="show"
       className="mx-auto w-full max-w-5xl"
     >
-      <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-        <div className="flex items-center gap-2">
-          <div
+      <motion.div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+        <motion.div className="flex items-center gap-2">
+          <motion.div
             className={cn(
               "flex size-9 items-center justify-center rounded-xl ring-1 ring-accent/20",
               premium ? "bg-gradient-to-br from-accent/20 to-violet-500/15" : "bg-accent/10",
             )}
           >
             <Plug className="size-4 text-accent" strokeWidth={1.6} />
-          </div>
-          <div>
+          </motion.div>
+          <motion.div>
             <h2 className="text-[15px] font-semibold tracking-tight text-foreground">Integrations</h2>
             <p className="text-[12px] text-muted-foreground">
               {premium
                 ? "Drop-in adapters for data, payments, email, and AI — wire them up per app as you publish."
                 : "Connect services inside each app after you create it — overview only here."}
             </p>
-          </div>
-        </div>
-      </div>
-      <div
+          </motion.div>
+        </motion.div>
+      </motion.div>
+      <motion.div
         className={cn(
           "rounded-2xl p-4 backdrop-blur-sm sm:p-5",
           premium
@@ -161,7 +120,7 @@ export function IntegrationShowcaseSection({ variant = "default" }: { variant?: 
         )}
       >
         <IntegrationShowcaseGrid />
-      </div>
+      </motion.div>
     </motion.section>
   );
 }

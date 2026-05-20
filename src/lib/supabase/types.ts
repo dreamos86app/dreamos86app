@@ -556,14 +556,57 @@ export interface Database {
           created_at: string;
           updated_at: string;
           project_id: string;
+          owner_id: string | null;
+          provider: string | null;
           key_name: string;
           ciphertext: string;
+          masked_value: string | null;
         };
         Insert: Omit<
           Database["public"]["Tables"]["project_secrets"]["Row"],
           "id" | "created_at" | "updated_at"
         >;
         Update: Partial<Database["public"]["Tables"]["project_secrets"]["Row"]>;
+        Relationships: [];
+      };
+
+      project_integrations: {
+        Row: {
+          id: string;
+          created_at: string;
+          updated_at: string;
+          project_id: string;
+          owner_id: string;
+          provider: string;
+          status: string;
+          display_name: string | null;
+          metadata: Json;
+          last_tested_at: string | null;
+        };
+        Insert: Omit<
+          Database["public"]["Tables"]["project_integrations"]["Row"],
+          "id" | "created_at" | "updated_at"
+        >;
+        Update: Partial<Database["public"]["Tables"]["project_integrations"]["Row"]>;
+        Relationships: [];
+      };
+
+      project_connection_audit: {
+        Row: {
+          id: string;
+          created_at: string;
+          project_id: string;
+          owner_id: string;
+          provider: string;
+          action: string;
+          status: string;
+          message: string | null;
+        };
+        Insert: Omit<
+          Database["public"]["Tables"]["project_connection_audit"]["Row"],
+          "id" | "created_at"
+        >;
+        Update: Partial<Database["public"]["Tables"]["project_connection_audit"]["Row"]>;
         Relationships: [];
       };
 
@@ -980,6 +1023,37 @@ export interface Database {
           p_conversation_id?: string;
         };
         Returns: { success: boolean; remaining: number; error: string | null };
+      };
+      charge_tokens: {
+        Args: {
+          p_user_id: string;
+          p_amount: number;
+          p_reason: string;
+          p_idempotency_key: string;
+          p_metadata?: Json;
+        };
+        Returns: {
+          success: boolean;
+          remaining?: number;
+          error?: string | null;
+          idempotent?: boolean;
+        };
+      };
+      grant_tokens: {
+        Args: {
+          p_user_id: string;
+          p_amount: number;
+          p_reason: string;
+          p_idempotency_key: string;
+          p_metadata?: Json;
+          p_source?: string;
+        };
+        Returns: {
+          success: boolean;
+          remaining?: number;
+          error?: string | null;
+          idempotent?: boolean;
+        };
       };
       grant_credits: {
         Args: {

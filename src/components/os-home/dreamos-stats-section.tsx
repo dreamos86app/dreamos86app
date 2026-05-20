@@ -101,7 +101,7 @@ export function DreamOsStatsSection() {
       </motion.div>
 
       <motion.div
-        className="grid gap-4 sm:grid-cols-3"
+        className="grid grid-cols-1 gap-4 sm:grid-cols-3"
         initial="hidden"
         whileInView="show"
         viewport={{ once: true, margin: "-40px" }}

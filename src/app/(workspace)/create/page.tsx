@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { requireServerUser } from "@/lib/auth/session";
 import { ImmersiveWorkspace } from "@/components/create/workspace/immersive-workspace";
 import { Loader2 } from "lucide-react";
 
@@ -16,16 +16,13 @@ type Mode = (typeof VALID_MODES)[number];
 export default async function WorkspaceCreatePage({
   searchParams,
 }: {
-  searchParams: Promise<{ prompt?: string; projectId?: string; mode?: string }>;
+  searchParams: Promise<{ prompt?: string; projectId?: string; mode?: string; autostart?: string }>;
 }) {
+  const { prompt, projectId, mode, autostart } = await searchParams;
+  const nextPath = `/create${prompt || projectId || mode ? `?${new URLSearchParams({ ...(prompt ? { prompt } : {}), ...(projectId ? { projectId } : {}), ...(mode ? { mode } : {}) }).toString()}` : ""}`;
+  const user = await requireServerUser(nextPath);
+
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) redirect("/auth/login");
-
-  const { prompt, projectId, mode } = await searchParams;
 
   // Validate mode param — fall back to "build" for unknown values
   const initialMode: Mode = VALID_MODES.includes(mode as Mode)
@@ -55,6 +52,7 @@ export default async function WorkspaceCreatePage({
       <ImmersiveWorkspace
         initialPrompt={prompt ?? ""}
         initialMode={initialMode}
+        initialAutoStart={autostart === "1"}
         project={project}
       />
     </Suspense>

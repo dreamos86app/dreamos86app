@@ -3,6 +3,7 @@
 import * as React from "react";
 import Image from "next/image";
 import { motion } from "framer-motion";
+import { IntegrationIconWell } from "@/components/brand/integration-icons";
 import {
   ArrowRight,
   Clock,
@@ -15,8 +16,6 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-
-const SI = (slug: string) => `https://cdn.jsdelivr.net/npm/simple-icons@13/icons/${slug}.svg`;
 
 function WorkspaceModesVisual() {
   const modes = [
@@ -95,8 +94,7 @@ function IntegrationsVisual() {
             )}
           >
             {item.slug ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={SI(item.slug)} alt="" className="size-6 object-contain" loading="lazy" />
+              <IntegrationIconWell provider={item.slug} size="sm" title={item.label} />
             ) : (
               <Image
                 src="/dreamos86-platform-logo.png"

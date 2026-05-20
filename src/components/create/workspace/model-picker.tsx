@@ -133,7 +133,7 @@ function ModelRow({
           {PROVIDER_LABELS[model.provider]}
         </span>
         <span className="text-[9.5px] text-muted-foreground/60 font-mono">
-          {model.contextK >= 1000 ? `${model.contextK / 1000}M` : `${model.contextK}K`} · {model.credits} tokens
+          {model.contextK >= 1000 ? `${model.contextK / 1000}M` : `${model.contextK}K`} · {model.credits} credits
         </span>
       </div>
     </button>
@@ -226,22 +226,6 @@ export function ModelPicker({
   const searchRef = React.useRef<HTMLInputElement>(null);
   const [mounted, setMounted] = React.useState(false);
   const current = CREATION_MODELS.find((m) => m.id === value) ?? CREATION_MODELS[0];
-
-  // Free users always use auto-routing — show locked "Automatic" pill (hooks still called above)
-  if (isFree) {
-    return (
-      <div className={cn("relative", className)}>
-        <div className="flex h-7 items-center gap-1.5 rounded-md bg-surface px-2 text-[12px] font-medium text-muted-foreground ring-1 ring-border cursor-default select-none">
-          <Sparkles className="size-3 text-accent/70" strokeWidth={1.75} />
-          <span>Automatic</span>
-          <span className="rounded-full bg-accent/10 px-1 py-0.5 text-[9px] font-bold text-accent">
-            AUTO
-          </span>
-          <Lock className="size-3 text-muted-foreground/40 ml-0.5" strokeWidth={1.65} />
-        </div>
-      </div>
-    );
-  }
 
   React.useEffect(() => { setMounted(true); }, []);
 
@@ -374,6 +358,21 @@ export function ModelPicker({
     </AnimatePresence>,
     document.body,
   ) : null;
+
+  if (isFree) {
+    return (
+      <div className={cn("relative", className)}>
+        <div className="flex h-7 items-center gap-1.5 rounded-md bg-surface px-2 text-[12px] font-medium text-muted-foreground ring-1 ring-border cursor-default select-none">
+          <Sparkles className="size-3 text-accent/70" strokeWidth={1.75} />
+          <span>Automatic</span>
+          <span className="rounded-full bg-accent/10 px-1 py-0.5 text-[9px] font-bold text-accent">
+            AUTO
+          </span>
+          <Lock className="size-3 text-muted-foreground/40 ml-0.5" strokeWidth={1.65} />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={cn("relative", className)}>

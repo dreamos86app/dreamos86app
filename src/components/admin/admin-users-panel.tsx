@@ -135,7 +135,7 @@ function UserDetailDrawer({
               <p className="font-semibold capitalize">{user.plan_id}</p>
             </div>
             <div className="rounded-lg bg-surface p-3 ring-1 ring-border">
-              <p className="text-muted-foreground">Tokens</p>
+              <p className="text-muted-foreground">Credits</p>
               <p className="font-semibold tabular-nums">
                 {user.tokens_remaining.toLocaleString()} / {user.monthly_token_limit.toLocaleString()}
               </p>
@@ -154,13 +154,13 @@ function UserDetailDrawer({
           </div>
 
           <div className="space-y-3 rounded-xl bg-surface p-4 ring-1 ring-border">
-            <p className="text-[12px] font-semibold">Token actions</p>
+            <p className="text-[12px] font-semibold">Credit actions</p>
             <Input placeholder="Reason (required)" value={reason} onChange={(e) => setReason(e.target.value)} />
             <OwnerConfirmCheckbox checked={confirmOwner} onChange={setConfirmOwner} />
             <div className="flex flex-wrap gap-2">
               <Input
                 type="number"
-                placeholder="Add tokens"
+                placeholder="Add credits"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 className="w-28"
@@ -252,7 +252,7 @@ function UserDetailDrawer({
             <div className="space-y-2 text-[11px] text-muted-foreground">
               <p>Recent AI usage: {(detail?.usage ?? []).length} rows</p>
               <p>Build jobs: {(detail?.buildJobs ?? []).length} rows</p>
-              <p>Token ledger: {(detail?.tokenLedger ?? []).length} rows</p>
+              <p>Credit ledger: {(detail?.tokenLedger ?? []).length} rows</p>
             </div>
           )}
         </div>
@@ -376,7 +376,7 @@ export function AdminUsersPanel() {
                 <th className="px-4 py-2.5">User</th>
                 <th className="px-4 py-2.5">Plan</th>
                 <th className="px-4 py-2.5">Subscription</th>
-                <th className="px-4 py-2.5">Tokens</th>
+                <th className="px-4 py-2.5">Credits</th>
                 <th className="px-4 py-2.5">Joined</th>
                 <th className="px-4 py-2.5">Last active</th>
                 <th className="px-4 py-2.5" />

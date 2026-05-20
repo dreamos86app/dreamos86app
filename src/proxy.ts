@@ -10,6 +10,7 @@
 
 import { createServerClient } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
+import { buildAuthCallbackRedirectFromSearchParams } from "@/lib/auth/oauth-redirect";
 
 /** Routes that require authentication */
 const PROTECTED_PATHS = [
@@ -41,9 +42,19 @@ const PROTECTED_PATHS = [
 const AUTH_PATHS = ["/auth/login", "/auth/signup", "/auth/sign-up", "/auth/waitlist"];
 
 export async function proxy(request: NextRequest) {
+  const { pathname, searchParams } = request.nextUrl;
+
+  // OAuth mis-config: Supabase sometimes lands PKCE code on Site URL (/) instead of /auth/callback
+  const oauthRedirect = buildAuthCallbackRedirectFromSearchParams(
+    searchParams,
+    request.url,
+  );
+  if (oauthRedirect && (pathname === "/" || pathname === "")) {
+    return NextResponse.redirect(new URL(oauthRedirect, request.url));
+  }
+
   let supabaseResponse = NextResponse.next({ request });
 
-  // Only run Supabase middleware when env vars are present
   if (
     !process.env.NEXT_PUBLIC_SUPABASE_URL ||
     !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -72,31 +83,36 @@ export async function proxy(request: NextRequest) {
     },
   );
 
-  // Refresh session — do NOT remove this
   let user = null as Awaited<
     ReturnType<typeof supabase.auth.getUser>
   >["data"]["user"];
+
+  let authRefreshFailed = false;
 
   try {
     const { data } = await supabase.auth.getUser();
     user = data.user;
   } catch (e) {
-    // Local Windows dev often hits TLS chain issues hitting supabase.co; without
-    // NODE_TLS_REJECT_UNAUTHORIZED uncaught failures here yield 500 for every route.
+    authRefreshFailed = true;
     if (process.env.NODE_ENV !== "production") {
-      console.warn("[dreamos-proxy] Supabase auth refresh failed:", e);
+      console.warn(
+        "[dreamos-proxy] Supabase auth refresh failed (Edge may not use dev TLS workaround):",
+        e instanceof Error ? e.message : e,
+      );
     }
     user = null;
   }
 
-  const { pathname } = request.nextUrl;
+  // In local dev, Edge middleware cannot use NODE_TLS_REJECT_UNAUTHORIZED from instrumentation.
+  // Do not force logged-out redirects when refresh failed — server routes use Node + TLS workaround.
+  if (authRefreshFailed && process.env.NODE_ENV !== "production") {
+    return supabaseResponse;
+  }
 
-  // Redirect authenticated users away from auth pages
   if (user && AUTH_PATHS.some((p) => pathname.startsWith(p))) {
     return NextResponse.redirect(new URL("/", request.url));
   }
 
-  // Redirect unauthenticated users to login for protected routes
   if (!user && PROTECTED_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
     const loginUrl = new URL("/auth/login", request.url);
     loginUrl.searchParams.set("next", pathname);

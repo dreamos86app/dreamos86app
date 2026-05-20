@@ -30,10 +30,12 @@ export function resolveEffectiveUserId(
   return null;
 }
 
-/** Stale UI: persisted profile without a live session. */
+/** Stale UI: persisted profile without a live Supabase session (never trust localStorage alone). */
 export function isStalePersistedProfile(
   session: Session | null | undefined,
   profile: Profile | null | undefined,
+  user?: User | null | undefined,
 ): boolean {
-  return Boolean(profile?.id && !session?.user?.id);
+  const liveId = user?.id ?? session?.user?.id;
+  return Boolean(profile?.id && !liveId);
 }

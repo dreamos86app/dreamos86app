@@ -140,7 +140,9 @@ function QuickCreateBar({
       console.info("[home] launch", { source, chars: q.length });
     }
     if (!q) return;
-    router.push(`/create?prompt=${encodeURIComponent(q)}&mode=${mode}`);
+    router.push(
+      `/create?prompt=${encodeURIComponent(q)}&mode=${mode}&autostart=1`,
+    );
   }
 
   return (
@@ -335,7 +337,7 @@ function PlatformStats({ appCount }: { appCount: number }) {
       {hydrated && (
         <span className="flex items-center gap-1.5">
           <Zap className="size-3 text-accent/70" strokeWidth={1.75} />
-          {credits} tokens
+          {credits} credits
         </span>
       )}
     </div>

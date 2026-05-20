@@ -10,7 +10,7 @@ import {
   Link2, HelpCircle, MessageSquare, Bot,
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
@@ -25,12 +25,17 @@ import { calculateTokens } from "@/lib/credits/cost-engine";
 import { resolveDisplayName } from "@/lib/profile-display";
 import { toast } from "@/lib/toast";
 import { createDreamChatTransport } from "@/lib/chat/create-chat-transport";
-import { resolveClientUserId } from "@/lib/chat/resolve-client-user";
+import { runAiPreflight } from "@/lib/ai/run-preflight";
+import { isAiPreflightSuccess, preflightBlockedLabel } from "@/lib/ai/preflight-types";
 import { applyComposerPaste } from "@/lib/composer/textarea-handlers";
 import { composerTextareaClass } from "@/components/ui/composer-shell";
 import { useHydrated } from "@/lib/hooks/use-hydrated";
-import { submitDebug } from "@/lib/dev/submit-debug";
-import { ComposerDebugStrip } from "@/components/dev/composer-debug-strip";
+import { submitDebug, uiSubmitLog } from "@/lib/dev/submit-debug";
+import { useComposerClickCapture } from "@/lib/dev/composer-click-capture";
+import { pushSubmitTrace } from "@/lib/dev/submit-pipeline-trace";
+import { SubmitPipelinePanel } from "@/components/dev/submit-pipeline-panel";
+import { CHAT_BUILD_BUNDLE } from "@/lib/dev/chat-build-bundle";
+import { isSubmitDebugEnabled } from "@/lib/dev/submit-debug-enabled";
 
 const DISCUSS_MODEL_ID_FREE = "gpt-4o-mini";
 
@@ -338,10 +343,21 @@ function MessageBubble({ msg, displayName, avatarUrl, attachments = [] }: {
 // ─── Main ChatView ────────────────────────────────────────────────────────────
 
 export function ChatView() {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const authReturnTo = React.useMemo(() => {
+    const qs = searchParams?.toString();
+    return qs ? `${pathname}?${qs}` : pathname || "/chat";
+  }, [pathname, searchParams]);
+
   const supabase = createClient();
   const { profile, user, session, loading: authLoading } = useAuthStore();
   const hydrated = useHydrated();
-  const { remaining, syncFromDB, isConfirmed } = useCreditsStore();
+  const { remaining, syncFromDB, isConfirmed, deductOptimistic } = useCreditsStore();
+  const debugEnabled = isSubmitDebugEnabled(
+    searchParams,
+    profile?.email ?? user?.email ?? null,
+  );
   const freePlan = planIsFree(profile?.plan_id);
   const [paidDiscussModel, setPaidDiscussModel] = React.useState("claude-sonnet-4-6");
   const effectiveDiscussModel = freePlan ? DISCUSS_MODEL_ID_FREE : paidDiscussModel;
@@ -362,8 +378,19 @@ export function ChatView() {
   const [showCreditsModal, setShowCreditsModal] = React.useState(false);
   const [input, setInput] = React.useState("");
   const [lastSubmitAt, setLastSubmitAt] = React.useState<number | null>(null);
+  const [lastApiUrl, setLastApiUrl] = React.useState<string | null>(null);
   const [lastApiStatus, setLastApiStatus] = React.useState<string | null>(null);
+  const [submitBlocker, setSubmitBlocker] = React.useState<string | null>(null);
+  const [debugClicked, setDebugClicked] = React.useState(false);
+  const [debugSubmitted, setDebugSubmitted] = React.useState(false);
+  const [preflightState, setPreflightState] = React.useState("idle");
+  const [chatState, setChatState] = React.useState("idle");
+  const [debugBlocked, setDebugBlocked] = React.useState("no");
+  const [submitStatusLabel, setSubmitStatusLabel] = React.useState("Ready");
+  const composerRootRef = React.useRef<HTMLDivElement>(null);
+  const submitInFlightRef = React.useRef(false);
   const formRef = React.useRef<HTMLFormElement>(null);
+  useComposerClickCapture("chat", composerRootRef);
   const fileRef = React.useRef<HTMLInputElement>(null);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const bottomRef = React.useRef<HTMLDivElement>(null);
@@ -387,7 +414,7 @@ export function ChatView() {
   const transport = React.useMemo(
     () =>
       createDreamChatTransport({
-        label: "ai-chat",
+        label: "chat",
         getBody: () => ({
           modelId: discussModelRef.current,
           mode: "discuss",
@@ -400,6 +427,19 @@ export function ChatView() {
         },
         onSuccess: () => {
           setTokenError(false);
+        },
+        onFetchStart: (url) => {
+          setLastApiUrl(url);
+          setLastApiStatus("pending");
+          setChatState("pending");
+          submitDebug("chat", "fetch start", { url });
+        },
+        onFetchEnd: (status) => {
+          const label = String(status);
+          setLastApiStatus(label);
+          setChatState(label.startsWith("blocked") ? "error" : "ok");
+          uiSubmitLog("chat", `chat status ${status}`);
+          submitDebug("chat", "response status", { status });
         },
       }),
     [],
@@ -417,6 +457,7 @@ export function ChatView() {
     },
     onFinish: () => {
       pendingAttachmentIdsRef.current = [];
+      deductOptimistic(discussTokens);
       if (userId) void syncFromDB(userId, { force: true });
     },
   });
@@ -429,15 +470,7 @@ export function ChatView() {
   }, [userId, syncFromDB]);
 
   const trimmedInput = input.trim();
-  const submitDisabledReason = !trimmedInput
-    ? "empty"
-    : isBusy
-      ? "busy"
-      : needsSignIn
-        ? "sign-in"
-        : tokenBlocked
-          ? "tokens"
-          : null;
+  const submitDisabledReason = !trimmedInput ? "empty" : isBusy ? "busy" : null;
 
   const tokensStatus = !isConfirmed
     ? "loading"
@@ -486,68 +519,134 @@ export function ChatView() {
     c.title.toLowerCase().includes(search.toLowerCase()),
   );
 
+  function failSend(blocked: string, message: string, hint?: string) {
+    const full = hint ? `${message} — ${hint}` : message;
+    setLastApiStatus(blocked);
+    setSubmitBlocker(full);
+    setDebugBlocked(blocked.replace(/^blocked:/, "") || "error");
+    if (blocked.includes("preflight") || blocked.startsWith("blocked:")) {
+      setPreflightState("error");
+    }
+    pushSubmitTrace("chat", full, {
+      level: "error",
+      error: full,
+      blocked: blocked.replace(/^blocked:/, "") || "error",
+      preflight: blocked.includes("preflight") ? "error" : undefined,
+      chat: blocked.includes("server") || blocked.includes("tokens") ? "error" : undefined,
+    });
+    toast.error(full);
+    submitDebug("chat", blocked, { message });
+  }
+
   function notifySubmitBlocked(reason: string) {
-    submitDebug("chat", `blocked: ${reason}`);
-    if (reason === "tokens") {
-      toast.error("Not enough tokens for this message.");
-      setShowCreditsModal(true);
-    } else if (reason === "sign-in") {
-      toast.error(`Please sign in again at ${appUrl("/auth/login")}.`);
+    setDebugBlocked(reason);
+    if (reason === "empty") {
+      failSend("blocked:empty", "Type a message before sending.");
     } else if (reason === "busy") {
-      toast.error("Please wait for the current reply to finish.");
+      return;
     }
   }
 
-  async function handleSend(e?: React.FormEvent, presetText?: string) {
-    e?.preventDefault();
-    setLastSubmitAt(Date.now());
-    submitDebug("chat", "submit handler started", {
-      source: presetText ? "preset" : e ? "form" : "button",
-      chars: (presetText ?? input).trim().length,
-    });
+  const runSend = React.useCallback(async (source: "form" | "preset" | "button" = "form", presetText?: string) => {
+    setDebugClicked(true);
+    setSubmitStatusLabel("Submit started");
+
+    if (submitInFlightRef.current) {
+      setDebugBlocked("busy");
+      notifySubmitBlocked("busy");
+      setSubmitStatusLabel("Failed: A request is already in progress");
+      return;
+    }
+    setDebugSubmitted(true);
+    uiSubmitLog("chat", "handleSubmit start", { source });
+    submitDebug("chat", "handleSend start", { source });
     const text = (presetText ?? input).trim();
     if (!text) {
+      setDebugBlocked("empty");
       notifySubmitBlocked("empty");
+      setSubmitStatusLabel("Failed: Type a message before sending");
       return;
     }
     if (isBusy) {
-      notifySubmitBlocked("busy");
-      return;
-    }
-    if (needsSignIn) {
-      notifySubmitBlocked("sign-in");
-      return;
-    }
-    if (tokenBlocked) {
-      notifySubmitBlocked("tokens");
       return;
     }
 
-    const uid = await resolveClientUserId(supabase, user, profile);
-    if (!uid) {
-      toast.error("Please sign in again.");
-      return;
-    }
+    submitInFlightRef.current = true;
+    const draft = presetText ?? input;
+    setLastSubmitAt(Date.now());
+    setSubmitBlocker(null);
+    setDebugBlocked("no");
+    setTokenError(false);
+    clearError();
 
-    let convId = activeConvId;
-    let createdConv: Conversation | null = null;
-    if (!convId) {
-      const title = text.slice(0, 60) || "New conversation";
-      const { data: conv, error: convErr } = await supabase
-        .from("conversations")
-        .insert({ user_id: uid, title, model_id: effectiveDiscussModel })
-        .select()
-        .single();
-      if (convErr || !conv) {
-        const detail = convErr?.message ?? "Check Supabase conversations table and RLS.";
-        toast.error(`Could not start a conversation — ${detail}`);
-        return;
+    try {
+    setSubmitStatusLabel("Preflight started");
+    setLastApiUrl("/api/ai/preflight");
+    setLastApiStatus("preflight:pending");
+    setPreflightState("pending");
+    setChatState("idle");
+    uiSubmitLog("chat", "preflight fetch start");
+    submitDebug("chat", "preflight start");
+
+    const pre = await runAiPreflight({
+      mode: "discuss",
+      prompt: text,
+      conversationId: activeConvId,
+      modelId: effectiveDiscussModel,
+    });
+
+    uiSubmitLog("chat", `preflight status ${pre.ok ? "ok" : pre.status}`, {
+      code: pre.ok ? undefined : pre.code,
+    });
+    submitDebug("chat", "preflight status", {
+      ok: pre.ok,
+      status: pre.ok ? 200 : pre.status,
+      code: pre.ok ? undefined : pre.code,
+    });
+
+    if (!isAiPreflightSuccess(pre)) {
+      setPreflightState("error");
+      const blocked = preflightBlockedLabel(pre.code, pre.status);
+      if (pre.code === "insufficient_tokens") {
+        setTokenError(true);
+        setShowCreditsModal(true);
       }
-      convId = conv.id;
-      convRef.current = conv.id;
-      createdConv = conv as Conversation;
-    } else {
-      convRef.current = convId;
+      const reason = `Preflight HTTP ${pre.status}${pre.code ? ` (${pre.code})` : ""}: ${pre.error}`;
+      pushSubmitTrace("chat", reason, {
+        level: "error",
+        error: pre.hint ? `${pre.error} — ${pre.hint}` : pre.error,
+        preflight: "error",
+        blocked: pre.code ?? String(pre.status),
+      });
+      failSend(blocked, pre.error, pre.hint);
+      setSubmitStatusLabel(
+        `Failed: Preflight HTTP ${pre.status}${pre.code ? ` (${pre.code})` : ""} — ${pre.hint ? `${pre.error} — ${pre.hint}` : pre.error}`,
+      );
+      return;
+    }
+
+    setPreflightState("ok");
+    pushSubmitTrace("chat", "Preflight OK — starting chat", { level: "ok", preflight: "ok" });
+
+    const hadConv = Boolean(activeConvId);
+    if (pre.conversationId) {
+      convRef.current = pre.conversationId;
+      setActiveConvId(pre.conversationId);
+      if (!hadConv) {
+        const stub: Conversation = {
+          id: pre.conversationId,
+          user_id: pre.userId,
+          title: text.slice(0, 60) || "New conversation",
+          model_id: effectiveDiscussModel,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          pinned: false,
+          archived: false,
+          message_count: 0,
+          last_message_at: null,
+        };
+        setConversations((prev) => [stub, ...prev.filter((c) => c.id !== pre.conversationId)]);
+      }
     }
 
     const uploadIds: string[] = [];
@@ -558,7 +657,8 @@ export function ChatView() {
         const r = await fetch("/api/chat/attachments", { method: "POST", body: fd });
         const j = (await r.json()) as { id?: string; error?: string };
         if (!r.ok) {
-          toast.error(j.error ?? "Could not upload attachment");
+          failSend("blocked:server", j.error ?? "Could not upload attachment");
+          setSubmitStatusLabel(`Failed: ${j.error ?? "Could not upload attachment"}`);
           return;
         }
         if (j.id) uploadIds.push(j.id);
@@ -567,33 +667,116 @@ export function ChatView() {
     }
     pendingAttachmentIdsRef.current = uploadIds;
 
-    setTokenError(false);
-    clearError();
-    const draft = presetText ?? input;
     if (!presetText) setInput("");
 
-    submitDebug("chat", "fetch /api/chat started", { convId });
-    setLastApiStatus("pending");
-    try {
+      setSubmitStatusLabel("Chat started");
+      uiSubmitLog("chat", "chat fetch start");
+      setLastApiUrl("/api/chat");
+      setLastApiStatus("pending");
+      setChatState("pending");
       await sendMessage({ text });
-      setLastApiStatus("ok");
-      if (createdConv) {
-        setActiveConvId(createdConv.id);
-        setConversations((prev) => [createdConv, ...prev]);
-      }
-      if (process.env.NODE_ENV !== "production") {
-        console.info("[ai-chat] sendMessage done");
-      }
+      setLastApiStatus((s) => (s === "pending" ? "ok" : s));
+      setChatState("ok");
+      submitDebug("chat", "ui updated");
+      setSubmitStatusLabel("Chat started (stream active)");
     } catch (err) {
-      setLastApiStatus("error");
+      setChatState("error");
       const msg = err instanceof Error ? err.message : "Could not send message";
-      if (!msg.includes("Not enough tokens")) toast.error(msg);
+      if (!msg.includes("Not enough tokens") && !msg.toLowerCase().includes("credit")) {
+        failSend("blocked:server", msg);
+      } else {
+        setTokenError(true);
+        setShowCreditsModal(true);
+        setLastApiStatus("blocked:tokens");
+        setDebugBlocked("credits");
+      }
+      setSubmitStatusLabel(`Failed: ${msg}`);
       if (!presetText) setInput(draft);
+    } finally {
+      submitInFlightRef.current = false;
     }
+  }, [
+    input,
+    isBusy,
+    attachments,
+    activeConvId,
+    effectiveDiscussModel,
+    clearError,
+    sendMessage,
+    setConversations,
+  ]);
+
+  const runSendRef = React.useRef(runSend);
+  runSendRef.current = runSend;
+
+  const handleFormSubmit = React.useCallback((e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setDebugSubmitted(true);
+    setSubmitStatusLabel("Click detected");
+    uiSubmitLog("chat-ui", "form submit fired");
+    submitDebug("chat", "form submit fired");
+    void runSendRef.current("form");
+  }, []);
+
+  const handleFormSubmitCapture = React.useCallback(() => {
+    setSubmitStatusLabel("Click detected");
+  }, []);
+
+  async function handleSend(e?: React.FormEvent, presetText?: string) {
+    e?.preventDefault();
+    await runSendRef.current(presetText ? "preset" : "form", presetText);
   }
 
+  React.useEffect(() => {
+    if (!hydrated) return;
+    pushSubmitTrace("chat", "Chat composer mounted", { level: "ok" });
+  }, [hydrated]);
+
+  React.useEffect(() => {
+    if (!hydrated) return;
+    const btn = composerRootRef.current?.querySelector(
+      "[data-chat-send-btn]",
+    ) as HTMLButtonElement | null;
+    if (!btn) {
+      pushSubmitTrace("chat", "Send button missing from DOM — cannot wire click", {
+        level: "error",
+        error: "Send button not found. Try refreshing the page.",
+      });
+      return;
+    }
+    pushSubmitTrace("chat", "Send button found — native listeners attached", { level: "ok" });
+
+    const onPointerDown = () => {
+      setDebugClicked(true);
+      setSubmitStatusLabel("Pointer down detected");
+      uiSubmitLog("chat-ui", "send pointer down");
+    };
+    const onClick = () => {
+      setDebugClicked(true);
+      setSubmitStatusLabel("Click detected");
+      uiSubmitLog("chat-ui", "send click (native)");
+      void runSendRef.current("button");
+    };
+
+    btn.addEventListener("pointerdown", onPointerDown, true);
+    btn.addEventListener("click", onClick, true);
+    return () => {
+      btn.removeEventListener("pointerdown", onPointerDown, true);
+      btn.removeEventListener("click", onClick, true);
+    };
+  }, [hydrated]);
+
   return (
-    <div className="flex h-full min-h-0 min-w-0 w-full overflow-hidden">
+    <div className="flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden">
+      {debugEnabled && (
+        <div
+          className="shrink-0 border-b border-amber-500/40 bg-amber-500/10 px-3 py-1 text-center text-[11px] font-semibold text-amber-950 dark:text-amber-100"
+          data-testid="chat-build-bundle"
+        >
+          Chat build bundle: {CHAT_BUILD_BUNDLE}
+        </div>
+      )}
+      <div className="flex min-h-0 flex-1 overflow-hidden">
       {/* Conversation sidebar */}
       <div className="hidden w-64 shrink-0 flex-col border-r border-border bg-background lg:flex">
         <div className="flex items-center gap-2 border-b border-border p-3">
@@ -822,7 +1005,10 @@ export function ChatView() {
         </div>
 
         {/* Input area */}
-        <div className="shrink-0 border-t border-border/60 bg-background/90 px-3 pt-2.5 backdrop-blur-xl pb-[max(0.875rem,calc(4rem+env(safe-area-inset-bottom,0px)))] lg:pb-3">
+        <div
+          ref={composerRootRef}
+          className="relative z-30 shrink-0 border-t border-border/60 bg-background/90 px-3 pt-2.5 backdrop-blur-xl pb-[max(0.875rem,calc(4rem+env(safe-area-inset-bottom,0px)))] lg:pb-3"
+        >
           {attachments.length > 0 && (
             <div className="mx-auto mb-2 flex w-full max-w-3xl flex-wrap gap-2">
               {attachments.map((f, i) => (
@@ -841,9 +1027,28 @@ export function ChatView() {
             </div>
           )}
 
+          {submitBlocker && (
+            <motion.div className="mx-auto mb-2 flex w-full max-w-3xl flex-col gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-[12px] text-destructive">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="mt-0.5 size-4 shrink-0" strokeWidth={1.75} />
+                <p>{submitBlocker}</p>
+              </div>
+              {lastApiStatus?.includes("blocked:auth") && (
+                <Link
+                  href={`/auth/login?next=${encodeURIComponent(authReturnTo)}`}
+                  className="inline-flex w-fit rounded-lg bg-accent px-2.5 py-1 text-[11px] font-semibold text-white"
+                >
+                  Sign in
+                </Link>
+              )}
+            </motion.div>
+          )}
+
           <form
             ref={formRef}
-            onSubmit={(e) => void handleSend(e)}
+            data-testid="chat-composer-form"
+            onSubmitCapture={handleFormSubmitCapture}
+            onSubmit={handleFormSubmit}
             className="composer-shell relative z-10 mx-auto flex w-full max-w-3xl items-end gap-2 rounded-xl border border-border/70 bg-surface/80 px-2 py-1.5 shadow-sm transition-[border-color,box-shadow] focus-within:border-border focus-within:shadow-sm"
           >
             <input
@@ -875,6 +1080,7 @@ export function ChatView() {
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                   e.preventDefault();
+                  uiSubmitLog("chat-ui", "enter submit");
                   submitDebug("chat", "enter pressed");
                   formRef.current?.requestSubmit();
                 }
@@ -890,19 +1096,33 @@ export function ChatView() {
             />
 
             <button
-              type="submit"
-              aria-disabled={!!submitDisabledReason}
-              onPointerDown={() => submitDebug("chat", "send button clicked")}
-              onClick={() => {
-                if (submitDisabledReason) notifySubmitBlocked(submitDisabledReason);
+              type="button"
+              data-chat-send-btn
+              data-testid="chat-send-button"
+              aria-busy={isBusy || undefined}
+              onPointerDownCapture={() => {
+                setDebugClicked(true);
+                setSubmitStatusLabel("Pointer down detected");
+                uiSubmitLog("chat-ui", "send pointer down");
+                submitDebug("chat", "send pointer down");
+              }}
+              onClickCapture={() => setSubmitStatusLabel("Click detected")}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setDebugClicked(true);
+                setSubmitStatusLabel("Click detected");
+                uiSubmitLog("chat-ui", "send click");
+                submitDebug("chat", "send button click");
+                void runSendRef.current("button");
               }}
               className={cn(
-                "mb-1 inline-flex h-8 shrink-0 cursor-pointer items-center justify-center rounded-[var(--radius-sm)] bg-accent px-3 text-accent-foreground shadow-[var(--shadow-sm)] transition hover:brightness-[1.03] active:scale-[0.97]",
-                submitDisabledReason && "cursor-not-allowed opacity-45",
+                "relative z-[60] mb-1 inline-flex h-8 shrink-0 cursor-pointer items-center justify-center rounded-[var(--radius-sm)] bg-accent px-3 text-accent-foreground shadow-[var(--shadow-sm)] transition hover:brightness-[1.03] active:scale-[0.97] pointer-events-auto",
+                isBusy && "opacity-70",
               )}
               title={
                 tokenBlocked
-                  ? "Not enough tokens — upgrade to continue"
+                  ? "Not enough credits — upgrade to continue"
                   : needsSignIn
                     ? "Sign in to send"
                     : submitDisabledReason === "busy"
@@ -916,20 +1136,28 @@ export function ChatView() {
             </button>
           </form>
 
-          <ComposerDebugStrip
-            channel="chat"
-            inputLen={input.length}
-            disabledReason={submitDisabledReason}
-            tokensStatus={tokensStatus}
-            lastSubmitAt={lastSubmitAt}
-            lastApiStatus={lastApiStatus}
-          />
+          {debugEnabled && (
+            <>
+              <p
+                data-testid="chat-submit-status"
+                className={cn(
+                  "mx-auto mt-2 max-w-3xl rounded-lg border px-2.5 py-2 text-center text-[12px] font-semibold",
+                  submitStatusLabel.startsWith("Failed")
+                    ? "border-destructive/50 bg-destructive/10 text-destructive"
+                    : "border-border bg-surface text-foreground",
+                )}
+              >
+                {submitStatusLabel}
+              </p>
+              <SubmitPipelinePanel channel="chat" inputLen={input.length} />
+            </>
+          )}
 
           <p className="mx-auto mt-1.5 max-w-3xl text-center text-[11px] text-muted-foreground">
             {needsSignIn
               ? `Please sign in again at ${appUrl("/auth/login")} (same origin as this tab) to send messages.`
               : tokenBlocked
-                ? <>Not enough tokens —{" "}
+                ? <>Not enough credits —{" "}
                   <button
                     type="button"
                     onClick={() => setShowCreditsModal(true)}
@@ -951,6 +1179,7 @@ export function ChatView() {
           />
         )}
       </AnimatePresence>
+      </div>
     </div>
   );
 }
