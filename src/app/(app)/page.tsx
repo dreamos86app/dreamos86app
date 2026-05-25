@@ -29,7 +29,7 @@ function OsHomeFallback() {
 /**
  * `/` — Logged-in OS home, or public marketing landing when anonymous.
  *
- * Submitting a prompt from the home quick bar navigates to /create (workspace).
+ * Submitting a prompt from the home quick bar creates a project via /api/projects/start-from-home, then opens the builder.
  */
 export default async function HomePage({
   searchParams,

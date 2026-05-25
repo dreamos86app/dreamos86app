@@ -30,8 +30,10 @@ const CHECKS = {
   },
   "home-prompt-handoff": () => {
     mustInclude("src/components/os-home/os-home.tsx", "storeAutostartHandoff", "home stores handoff");
+    mustInclude("src/components/os-home/os-home.tsx", "/api/projects/start-from-home", "home atomic start API");
     mustInclude("src/lib/create/autostart-handoff.ts", "handoff_consumed", "handoff consumed log");
-    mustInclude("src/components/create/create-workspace-entry.tsx", "idempotencyKey: handoffId", "draft idempotency from handoff");
+    mustInclude("src/lib/create/autostart-handoff.ts", "peekPendingAutostartHandoff", "peek handoff for builder");
+    mustInclude("src/components/create/create-workspace-entry.tsx", "assertProjectReady", "create verifies project before navigate");
   },
   "home-prompt-appears-in-builder-chat": () => {
     mustInclude("src/components/create/workspace/immersive-workspace.tsx", "pendingUserBubble", "optimistic user bubble");

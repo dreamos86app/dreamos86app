@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import dynamic from "next/dynamic";
 import { storeAutostartHandoff, type PendingPrompt } from "@/lib/create/autostart-handoff";
+import { buildBuilderUrl } from "@/lib/navigation/builder-url";
+import type { BuildStrategy } from "@/lib/create/autostart-handoff";
 
 const ImmersiveWorkspace = dynamic(
   () => import("@/components/create/workspace/immersive-workspace").then((m) => m.ImmersiveWorkspace),
@@ -27,22 +29,29 @@ type CreateWorkspaceEntryProps = {
   initialSkipDraft?: boolean;
 };
 
-function builderUrl(
+async function assertProjectReady(projectId: string): Promise<boolean> {
+  for (let i = 0; i < 25; i++) {
+    const res = await fetch(`/api/projects/${projectId}/summary`, { credentials: "include" });
+    if (res.ok) return true;
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  return false;
+}
+
+function navigateToBuilder(
   projectId: string,
-  prompt: string,
-  mode: string,
+  mode: PendingPrompt["mode"],
   autoStart: boolean,
-  strategy?: string,
+  strategy: BuildStrategy,
   model?: string,
 ): string {
-  const params = new URLSearchParams();
-  if (prompt.trim()) params.set("prompt", prompt.trim());
-  if (mode && mode !== "build") params.set("mode", mode);
-  if (autoStart) params.set("autostart", "1");
-  if (strategy) params.set("strategy", strategy);
-  if (model) params.set("model", model);
-  const qs = params.toString();
-  return `/apps/${projectId}/builder${qs ? `?${qs}` : ""}`;
+  return buildBuilderUrl({
+    projectId,
+    autostart: autoStart,
+    strategy,
+    model: model || null,
+    mode,
+  });
 }
 
 export function CreateWorkspaceEntry({
@@ -81,7 +90,13 @@ export function CreateWorkspaceEntry({
         });
 
         if (initialProjectId) {
-          router.replace(builderUrl(initialProjectId, prompt, mode, autoStart, strategy, initialModel));
+          const ready = await assertProjectReady(initialProjectId);
+          if (cancelled) return;
+          if (!ready) {
+            setError("App is still being created. Try again in a moment.");
+            return;
+          }
+          router.replace(navigateToBuilder(initialProjectId, mode, autoStart, strategy, initialModel));
           return;
         }
 
@@ -106,12 +121,24 @@ export function CreateWorkspaceEntry({
           setError(body.error ?? body.hint ?? "Could not open create workspace");
           return;
         }
-        router.replace(builderUrl(body.projectId, prompt, mode, autoStart, strategy, initialModel));
+        const ready = await assertProjectReady(body.projectId);
+        if (cancelled) return;
+        if (!ready) {
+          setError("App was created but is not ready yet. Retry in a moment.");
+          return;
+        }
+        router.replace(navigateToBuilder(body.projectId, mode, autoStart, strategy, initialModel));
         return;
       }
 
       if (initialProjectId) {
-        router.replace(builderUrl(initialProjectId, prompt, mode, autoStart, strategy, initialModel));
+        const ready = await assertProjectReady(initialProjectId);
+        if (cancelled) return;
+        if (!ready) {
+          setError("App is still being created. Try again in a moment.");
+          return;
+        }
+        router.replace(navigateToBuilder(initialProjectId, mode, autoStart, strategy, initialModel));
         return;
       }
 
@@ -154,7 +181,13 @@ export function CreateWorkspaceEntry({
         setError(body.error ?? body.hint ?? "Could not open create workspace");
         return;
       }
-      router.replace(builderUrl(body.projectId, prompt, mode, autoStart, strategy, initialModel));
+      const ready = await assertProjectReady(body.projectId);
+      if (cancelled) return;
+      if (!ready) {
+        setError("Could not confirm the new app is ready. Try again.");
+        return;
+      }
+      router.replace(navigateToBuilder(body.projectId, mode, autoStart, strategy, initialModel));
     }
 
     void bootstrap();

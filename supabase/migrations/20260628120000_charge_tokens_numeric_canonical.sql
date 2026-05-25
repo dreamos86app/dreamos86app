@@ -144,6 +144,6 @@ end;
 $$;
 
 revoke execute on function public.charge_tokens(uuid, numeric, text, text, jsonb, uuid, uuid) from public, anon;
-grant execute on function public.charge_tokens(uuid, numeric, text, text, jsonb, uuid, uuid) to service_role;
+grant execute on function public.charge_tokens(uuid, numeric, text, text, jsonb, uuid, uuid) to authenticated, service_role;
 
 notify pgrst, 'reload schema';

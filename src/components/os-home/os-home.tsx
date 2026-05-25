@@ -161,6 +161,8 @@ function QuickCreateBar({
   const formRef = React.useRef<HTMLFormElement>(null);
   const [modelId, setModelId] = React.useState(DEFAULT_MODEL_ID);
   const [buildStrategy, setBuildStrategy] = React.useState<BuildStrategy>("build_now");
+  const [creating, setCreating] = React.useState(false);
+  const [launchError, setLaunchError] = React.useState<string | null>(null);
   const planFirst = toggleFromBuildStrategy(buildStrategy);
   const complexPrompt = suggestBuildStrategy(value) === "plan_first" && value.trim().length > 0;
   const promptIdeas = useSessionComposerIdeas(6);
@@ -172,51 +174,67 @@ function QuickCreateBar({
     }
   }, [value, complexPrompt, planFirst]);
 
-  function launch(source: "button" | "enter" | "form") {
+  async function launch(source: "button" | "enter" | "form") {
     const q = value.trim();
     if (process.env.NODE_ENV !== "production") {
       console.info("[home] launch", { source, chars: q.length, buildStrategy });
     }
-    if (!q) return;
+    if (!q || creating) return;
+
+    setLaunchError(null);
+    onChange("");
+    setCreating(true);
 
     const handoffId = storeAutostartHandoff(q, "build", { buildStrategy, modelId });
-    const params = new URLSearchParams({
-      prompt: q,
-      mode: "build",
-      autostart: "1",
-      strategy: buildStrategy,
-      handoff: handoffId,
-    });
-    if (modelId && modelId !== DEFAULT_MODEL_ID) params.set("model", modelId);
-    router.push(`/create?${params.toString()}`);
 
-    void fetch("/api/projects/classify-intent", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ prompt: q }),
-    })
-      .then((r) => r.json())
-      .then((intent: { intent?: string; shouldCreateProject?: boolean; shouldAnswerQuestion?: boolean }) => {
-        if (
-          intent.intent === "question_only" ||
-          intent.shouldAnswerQuestion ||
-          intent.shouldCreateProject === false
-        ) {
-          storeAutostartHandoff(q, "discuss", { buildStrategy, modelId });
-          const discussParams = new URLSearchParams({
-            prompt: q,
-            mode: "discuss",
-            autostart: "1",
-            skipDraft: "1",
-            handoff: handoffId,
-          });
-          router.replace(`/create?${discussParams.toString()}`);
-        }
-      })
-      .catch(() => {
-        /* build handoff already stored — builder will proceed */
+    try {
+      const res = await fetch("/api/projects/start-from-home", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          prompt: q,
+          strategy: buildStrategy,
+          selectedModel: modelId !== DEFAULT_MODEL_ID ? modelId : null,
+          idempotencyKey: handoffId,
+        }),
       });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        intent?: string;
+        builderUrl?: string;
+        discussUrl?: string;
+        error?: string;
+        userMessage?: string;
+        projectId?: string;
+      };
+
+      if (!res.ok || data.ok === false) {
+        const msg = data.userMessage ?? data.error ?? "Could not start your build. Try again.";
+        setLaunchError(msg);
+        onChange(q);
+        return;
+      }
+
+      if (data.intent === "question" && data.discussUrl) {
+        storeAutostartHandoff(q, "discuss", { buildStrategy, modelId });
+        router.push(data.discussUrl);
+        return;
+      }
+
+      if (data.builderUrl && data.projectId) {
+        router.push(data.builderUrl);
+        return;
+      }
+
+      setLaunchError("Could not open the builder. Try again.");
+      onChange(q);
+    } catch {
+      setLaunchError("Network error — check your connection and try again.");
+      onChange(q);
+    } finally {
+      setCreating(false);
+    }
   }
 
   return (
@@ -230,11 +248,29 @@ function QuickCreateBar({
         ref={formRef}
         onSubmit={(e) => {
           e.preventDefault();
-          launch("form");
+          void launch("form");
         }}
         className="group relative overflow-hidden rounded-[1.5rem] border border-border/50 bg-background/90 shadow-[0_20px_56px_-28px_rgba(37,99,235,0.28)] ring-1 ring-border/40 transition-[border-color,box-shadow] focus-within:border-accent/30 focus-within:shadow-[0_24px_64px_-24px_rgba(37,99,235,0.35)]"
         data-testid="home-create-composer"
       >
+        {creating ? (
+          <div
+            className="flex items-center gap-2 border-b border-border/40 bg-accent/5 px-4 py-2 text-[12px] font-medium text-accent"
+            data-testid="home-creating-state"
+          >
+            <span className="inline-block size-3.5 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
+            Creating workspace…
+          </div>
+        ) : null}
+        {launchError ? (
+          <p
+            className="border-b border-destructive/20 bg-destructive/5 px-4 py-2 text-[12px] text-destructive"
+            data-testid="home-launch-error"
+            role="alert"
+          >
+            {launchError}
+          </p>
+        ) : null}
         <motion.div
           aria-hidden
           className="pointer-events-none absolute inset-x-0 bottom-0 h-[55%] bg-[radial-gradient(ellipse_90%_80%_at_50%_100%,color-mix(in_oklab,var(--accent)_22%,transparent),transparent_70%)]"
@@ -306,25 +342,20 @@ function QuickCreateBar({
             </p>
             <button
               type="submit"
-              aria-disabled={!value.trim()}
+              disabled={!value.trim() || creating}
               onPointerDown={() => {
                 if (process.env.NODE_ENV !== "production") console.info("[home] launch button clicked");
               }}
-              onClick={() => {
-                if (!value.trim() && process.env.NODE_ENV !== "production") {
-                  console.info("[home] launch blocked: empty");
-                }
-              }}
               className={cn(
                 "relative z-20 flex shrink-0 cursor-pointer items-center gap-2 rounded-xl px-4 py-2 text-[12px] font-semibold transition",
-                value.trim()
+                value.trim() && !creating
                   ? "bg-foreground text-background shadow-md hover:opacity-90 active:scale-[0.97]"
                   : "cursor-not-allowed bg-muted text-muted-foreground opacity-60",
               )}
               aria-label={planFirst ? "Create plan" : "Build app"}
               data-testid="home-build-submit"
             >
-              {planFirst ? "Create plan" : "Build"}
+              {creating ? "Starting…" : planFirst ? "Create plan" : "Build"}
               <ArrowRight className="size-4" strokeWidth={2.25} />
             </button>
           </div>

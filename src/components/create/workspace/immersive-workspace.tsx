@@ -82,6 +82,7 @@ import {
   clearAutostartDone,
   clearOperationSubmitted,
   consumeAutostartHandoff,
+  peekPendingAutostartHandoff,
   markAutostartDone,
   markOperationSubmitted,
   seedPendingFromUrl,
@@ -281,6 +282,8 @@ export interface ImmersiveWorkspaceProps {
   initialAutoStart?: boolean;
   initialBuildStrategy?: BuildStrategy;
   initialModelId?: string;
+  initialJobId?: string;
+  initialConversationId?: string;
   project?: CreateWorkspaceProject | null;
 }
 
@@ -290,6 +293,8 @@ export function ImmersiveWorkspace({
   initialAutoStart = false,
   initialBuildStrategy = "build_now",
   initialModelId,
+  initialJobId,
+  initialConversationId,
   project = null,
 }: ImmersiveWorkspaceProps) {
   const pathname = usePathname();
@@ -319,7 +324,9 @@ export function ImmersiveWorkspace({
   const [editTarget, setEditTarget] = React.useState<string | null>(null);
   const [attachments, setAttachments] = React.useState<Attachment[]>([]);
   const [creditError, setCreditError] = React.useState(false);
-  const [conversationId, setConversationId] = React.useState<string | null>(null);
+  const [conversationId, setConversationId] = React.useState<string | null>(
+    initialConversationId ?? null,
+  );
   const [localProjectId, setLocalProjectId] = React.useState<string | null>(null);
   const [autoStartFailed, setAutoStartFailed] = React.useState<string | null>(null);
   const autoStartedRef = React.useRef(false);
@@ -369,8 +376,16 @@ export function ImmersiveWorkspace({
   useComposerClickCapture("create", composerRootRef);
   const fileRef = React.useRef<HTMLInputElement>(null);
   const scrollRef = React.useRef<HTMLDivElement>(null);
-  const conversationIdRef = React.useRef<string | null>(null);
+  const conversationIdRef = React.useRef<string | null>(initialConversationId ?? null);
   conversationIdRef.current = conversationId;
+
+  React.useEffect(() => {
+    if (initialConversationId) {
+      setConversationId(initialConversationId);
+      conversationIdRef.current = initialConversationId;
+    }
+  }, [initialConversationId]);
+
   const projectIdRef = React.useRef<string | null>(null);
   const effectiveProjectId = localProjectId ?? project?.id ?? null;
   projectIdRef.current = effectiveProjectId;
@@ -486,6 +501,21 @@ export function ImmersiveWorkspace({
     eventsUrl: string;
     operationId: string;
   } | null>(null);
+
+  React.useEffect(() => {
+    const jobId = initialJobId ?? searchParams.get("jobId");
+    const pid = effectiveProjectId;
+    if (!jobId || !pid || activeBuildJob) return;
+    buildJobActiveRef.current = true;
+    setActiveBuildJob({
+      jobId,
+      eventsUrl: `/api/projects/${pid}/build-jobs/${jobId}/events`,
+      operationId: `url-job:${jobId}`,
+    });
+    setChatEngaged(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- resume job from home handoff once
+  }, [initialJobId, effectiveProjectId, searchParams, activeBuildJob]);
+
   type PromptQueueItem = { id: string; text: string; status: "queued" | "paused"; createdAt: number };
   const promptQueueRef = React.useRef<PromptQueueItem[]>([]);
   const [queueCount, setQueueCount] = React.useState(0);
@@ -1389,13 +1419,17 @@ export function ImmersiveWorkspace({
   }, [messages, pendingUserBubble]);
 
   React.useEffect(() => {
-    if (!hydrated || !initialAutoStart || !initialPrompt.trim()) return;
+    if (!hydrated || !initialAutoStart) return;
     if (autostartConsumedRef.current || autoStartedRef.current) return;
 
-    const pending = seedPendingFromUrl(initialPrompt, mode);
+    const urlPrompt = initialPrompt.trim();
+    const peeked = peekPendingAutostartHandoff();
+    if (!urlPrompt && !peeked?.text) return;
+
+    const pending = urlPrompt ? seedPendingFromUrl(urlPrompt, mode) : peeked;
     if (pending && wasOperationSubmitted(pending.id)) return;
 
-    const handoff = consumeAutostartHandoff(initialPrompt, mode);
+    const handoff = consumeAutostartHandoff(urlPrompt || peeked!.text, mode);
     if (!handoff) {
       if (pending && wasAutostartDone(pending.id) && !wasOperationSubmitted(pending.id)) {
         clearAutostartDone(pending.id);

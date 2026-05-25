@@ -34,6 +34,13 @@ function newPromptId(): string {
   return `hp_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
 }
 
+/** Read session handoff without consuming (for autostart when prompt is not in the URL). */
+export function peekPendingAutostartHandoff(): PendingPrompt | null {
+  const pending = readPending();
+  if (!pending || pending.consumed) return null;
+  return pending;
+}
+
 function readPending(): PendingPrompt | null {
   if (typeof sessionStorage === "undefined") return null;
   try {
