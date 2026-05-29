@@ -118,6 +118,7 @@ export function CreateWorkspaceEntry({
 
   React.useEffect(() => {
     if (!needsRedirectBootstrap) return;
+    if (workspaceReadyRef.current) return;
     let cancelled = false;
     setBootstrapPhase("running");
     setError(null);
@@ -259,25 +260,28 @@ export function CreateWorkspaceEntry({
     );
   }
 
-  if (!needsRedirectBootstrap || plainEmptyBuild) {
-    return (
-      <>
-        {bootstrapBanner}
-        <CreateComposerReadyBridge />
-        <ImmersiveWorkspace
-          initialPrompt={initialPrompt || readPendingCreatePrompt()}
-          initialMode={mode}
-          initialAutoStart={false}
-          initialBuildStrategy={strategy}
-          initialModelId={initialModel || undefined}
-          project={null}
-          onComposerReadyChange={(ready) => {
-            if (ready) notifyWorkspaceReady();
-          }}
-        />
-      </>
-    );
+  const keepWorkspaceMounted =
+    workspaceReadyRef.current || !needsRedirectBootstrap || plainEmptyBuild;
+
+  if (!keepWorkspaceMounted) {
+    return bootstrapBanner;
   }
 
-  return bootstrapBanner;
+  return (
+    <>
+      {bootstrapBanner}
+      <CreateComposerReadyBridge />
+      <ImmersiveWorkspace
+        initialPrompt={initialPrompt || readPendingCreatePrompt()}
+        initialMode={mode}
+        initialAutoStart={false}
+        initialBuildStrategy={strategy}
+        initialModelId={initialModel || undefined}
+        project={null}
+        onComposerReadyChange={(ready) => {
+          if (ready) notifyWorkspaceReady();
+        }}
+      />
+    </>
+  );
 }

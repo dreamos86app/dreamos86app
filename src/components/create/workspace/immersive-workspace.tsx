@@ -65,6 +65,10 @@ import {
 } from "@/lib/billing/partial-build-credits";
 import { useBuildJobProgress, type BuildJobPollState } from "@/hooks/use-build-job-progress";
 import { enqueueAsyncBuild } from "@/lib/create/async-build-client";
+import {
+  replaceBrowserUrl,
+  syncProjectIdInAddressBar,
+} from "@/lib/navigation/builder-url";
 import { PROMPT_QUEUE_FULL_MESSAGE, PROMPT_QUEUE_MAX } from "@/lib/create/queue-constants";
 import {
   canSubmitComposer,
@@ -1624,12 +1628,12 @@ export function ImmersiveWorkspace({
         setSubmitStatusLabel("Building in background…");
         setBuildStarting(false);
         submitInFlightRef.current = false;
-        router.replace(`/create?projectId=${asyncProjectId}`, { scroll: false });
+        syncProjectIdInAddressBar(asyncProjectId, pathname);
         return;
       }
 
       if (projectIdRef.current && submitMode === "build") {
-        router.replace(`/create?projectId=${projectIdRef.current}`, { scroll: false });
+        syncProjectIdInAddressBar(projectIdRef.current, pathname);
       }
 
       setSubmitStatusLabel("Chat started");
@@ -1726,8 +1730,9 @@ export function ImmersiveWorkspace({
     next.delete("autostart");
     next.delete("prompt");
     const qs = next.toString();
-    router.replace(qs ? `${pathname}?${qs}` : pathname || "/create", { scroll: false });
-  }, [pathname, router, searchParams]);
+    const target = qs ? `${pathname}?${qs}` : pathname || "/create";
+    replaceBrowserUrl(target);
+  }, [pathname, searchParams]);
 
   React.useEffect(() => {
     if (!pendingUserBubble) return;

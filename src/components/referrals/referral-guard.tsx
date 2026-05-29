@@ -46,13 +46,29 @@ export function ReferralGuard() {
       pathname?.startsWith("/auth/sign-up") ||
       pathname === "/signup";
 
-    if (onAuthSignup || pathname?.match(/^\/r\//)) {
-      router.replace(`/?${REFERRAL_NOTICE_QUERY}=${notice}`);
-      return;
-    }
+    const showNoticeOnCurrentPage = () => {
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("ref");
+        url.searchParams.set(REFERRAL_NOTICE_QUERY, notice);
+        const qs = url.searchParams.toString();
+        const dest = qs ? `${url.pathname}?${qs}` : url.pathname;
+        if (pathname?.match(/^\/r\//)) {
+          router.replace(`/?${REFERRAL_NOTICE_QUERY}=${notice}`);
+          return;
+        }
+        router.replace(dest);
+      } catch {
+        router.replace(`/?${REFERRAL_NOTICE_QUERY}=${notice}`);
+      }
+    };
 
-    if (searchParams.has("ref") || pathname?.match(/^\/r\//)) {
-      router.replace(`/?${REFERRAL_NOTICE_QUERY}=${notice}`);
+    if (
+      onAuthSignup ||
+      searchParams.has("ref") ||
+      pathname?.match(/^\/r\//)
+    ) {
+      showNoticeOnCurrentPage();
     }
   }, [loading, session, user, profile?.referral_code, pathname, searchParams, router]);
 
