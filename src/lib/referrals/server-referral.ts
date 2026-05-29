@@ -66,8 +66,7 @@ export async function attachReferralByCode(
   const { count } = await admin
     .from("referrals")
     .select("id", { count: "exact", head: true })
-    .eq("referrer_id", referrerId)
-    .neq("status", "fraud");
+    .eq("referrer_id", referrerId);
 
   if ((count ?? 0) >= MAX_REFERRALS_PER_REFERRER) {
     return { ok: false, error: "referral_limit_reached" };

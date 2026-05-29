@@ -29,14 +29,45 @@ function vercelPreviewOrigin(): string | null {
   return `https://${host}`;
 }
 
+const PRODUCTION_CANONICAL_ORIGIN = "https://dreamos86.com";
+
 function productionFallbackOrigin(): string {
   const app = process.env.NEXT_PUBLIC_APP_URL?.trim();
-  if (app) return trimOrigin(app);
+  if (app && !isLocalhostOrigin(app)) return trimOrigin(app);
   const vercel = vercelPreviewOrigin();
   if (vercel) return vercel;
   const prod = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
   if (prod) return `https://${prod.replace(/^https?:\/\//, "").replace(/\/$/, "")}`;
+  if (process.env.NODE_ENV === "production") return PRODUCTION_CANONICAL_ORIGIN;
   return LOCALHOST_DEFAULT;
+}
+
+/**
+ * Resolve origin from an incoming Request (proxy-aware).
+ * Production must never fall back to localhost when the request is on dreamos86.com.
+ */
+export function resolveRequestOrigin(request: Request): string {
+  try {
+    const url = new URL(request.url);
+    const forwardedHost = request.headers.get("x-forwarded-host");
+    const forwardedProto = request.headers.get("x-forwarded-proto");
+    const host =
+      forwardedHost?.split(",")[0]?.trim() ||
+      request.headers.get("host") ||
+      url.host;
+    const proto =
+      forwardedProto?.split(",")[0]?.trim() || url.protocol.replace(":", "") || "https";
+    if (host) {
+      const origin = trimOrigin(`${proto}://${host}`);
+      if (process.env.NODE_ENV === "production" && isLocalhostOrigin(origin)) {
+        return PRODUCTION_CANONICAL_ORIGIN;
+      }
+      return origin;
+    }
+  } catch {
+    /* fall through */
+  }
+  return resolveAppOrigin(request.url);
 }
 
 export type OriginMode = "client-live" | "dev-local" | "env-app" | "vercel" | "production-env" | "fallback";
@@ -68,7 +99,7 @@ export function resolveAppOrigin(requestUrl?: string): string {
     return LOCALHOST_DEFAULT;
   }
 
-  if (appUrl) return trimOrigin(appUrl);
+  if (appUrl && !isLocalhostOrigin(appUrl)) return trimOrigin(appUrl);
 
   const vercel = vercelPreviewOrigin();
   if (vercel) return vercel;

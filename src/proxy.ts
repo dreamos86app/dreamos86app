@@ -73,7 +73,6 @@ const PROTECTED_PATHS = [
   "/templates",
   "/chat",
   "/credits",
-  "/pricing",
   "/deploy",
   "/marketplace",
   "/analytics",

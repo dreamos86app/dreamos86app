@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
+import { resolveRequestOrigin } from "@/lib/url/app-origin";
 import {
   bootstrapProfileFromOAuth,
   readRefCookieFromRequest,
@@ -23,7 +24,8 @@ import {
  */
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url);
-  const { searchParams, origin } = requestUrl;
+  const { searchParams } = requestUrl;
+  const origin = resolveRequestOrigin(request);
 
   const code = searchParams.get("code");
   const type = searchParams.get("type");
@@ -155,7 +157,7 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  const safeNext = resolvePostAuthDestination(null, request.headers.get("cookie"));
+  const safeNext = resolvePostAuthDestination(null, request.headers.get("cookie"), origin);
   let destination = onboardingCompleted
     ? safeNext
     : `/onboarding?next=${encodeURIComponent(safeNext)}`;

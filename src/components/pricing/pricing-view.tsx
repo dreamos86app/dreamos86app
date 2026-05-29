@@ -432,13 +432,15 @@ interface PlanCardProps {
   currentPlanId?: string | null;
   children?: React.ReactNode;
   ctaOnClick?: () => void;
+  /** When set, CTA navigates here (e.g. public marketing signup). */
+  ctaHref?: string;
   /** Slightly tighter card when the app sidebar is expanded */
   compact?: boolean;
 }
 
 function PlanCard({
   id, name, price, annualPrice, annual, credits, actionCredits, actionCreditsBlurb, tagline, features,
-  notIncluded = [], highlight, badge, cta, currentPlanId, children, ctaOnClick, compact,
+  notIncluded = [], highlight, badge, cta, currentPlanId, children, ctaOnClick, ctaHref, compact,
 }: PlanCardProps) {
   const isCurrent = currentPlanId === id;
   const displayPrice = annual && annualPrice != null ? annualPrice : price;
@@ -546,6 +548,14 @@ function PlanCard({
               <div className={cn(ctaClass, "pointer-events-none cursor-default")}>
                 Current plan
               </div>
+            );
+          }
+          if (ctaHref) {
+            return (
+              <Link href={ctaHref} className={ctaClass}>
+                {cta}
+                <ArrowRight className="size-3.5" strokeWidth={2.5} />
+              </Link>
             );
           }
           if (ctaOnClick) {
@@ -804,7 +814,7 @@ const pricingSectionStagger = {
   },
 } as const;
 
-export function PricingView() {
+export function PricingView({ publicMode = false }: { publicMode?: boolean }) {
   const { profile } = useAuthStore();
   const sidebarCollapsed = useAppearanceStore((s) => s.sidebarCollapsed);
   const reduceMotion = useReducedMotion();
@@ -827,6 +837,10 @@ export function PricingView() {
   function openPaidLocked() {
     setPaidLockedOpen(true);
   }
+
+  const signupNext = encodeURIComponent("/pricing");
+  const publicPaidCtaHref = publicMode ? `/auth/signup?next=${signupNext}` : undefined;
+  const paidCtaHandler = publicMode ? undefined : openPaidLocked;
 
   const starterMonthly = 20;
   const proMonthly = 50;
@@ -916,7 +930,8 @@ export function PricingView() {
             "Team access",
           ]}
           cta="Get started free"
-          currentPlanId={planId}
+          currentPlanId={publicMode ? null : planId}
+          ctaHref={publicMode ? `/auth/signup?next=${signupNext}` : undefined}
         />
 
         <PlanCard
@@ -941,8 +956,9 @@ export function PricingView() {
             "Email support",
           ]}
           cta="Get Starter"
-          currentPlanId={planId}
-          ctaOnClick={openPaidLocked}
+          currentPlanId={publicMode ? null : planId}
+          ctaHref={publicPaidCtaHref}
+          ctaOnClick={paidCtaHandler}
         />
 
         <PlanCard
@@ -969,8 +985,9 @@ export function PricingView() {
             "Priority support",
           ]}
           cta="Get Pro"
-          currentPlanId={planId}
-          ctaOnClick={openPaidLocked}
+          currentPlanId={publicMode ? null : planId}
+          ctaHref={publicPaidCtaHref}
+          ctaOnClick={paidCtaHandler}
         />
 
         <PlanCard
@@ -1003,14 +1020,15 @@ export function PricingView() {
             "Dedicated support",
           ]}
           cta="Get Infinity"
-          currentPlanId={planId}
-          ctaOnClick={openPaidLocked}
+          currentPlanId={publicMode ? null : planId}
+          ctaHref={publicPaidCtaHref}
+          ctaOnClick={paidCtaHandler}
         >
           <InfinityDropdown
             annual={annual}
             selectedTier={infTier}
             onSelect={setInfTier}
-            onContactSales={openPaidLocked}
+            onContactSales={publicMode ? undefined : openPaidLocked}
           />
         </PlanCard>
       </motion.div>

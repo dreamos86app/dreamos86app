@@ -16,6 +16,7 @@ import {
   formatAuthCookieDirective,
   getAuthCookieOptions,
 } from "@/lib/auth/auth-cookie-options";
+import { isLocalhostOrigin } from "@/lib/url/app-origin";
 
 export const DREAMOS_AUTH_RETURN_TO_STORAGE = "dreamos_auth_return_to";
 export const DREAMOS_RETURN_TO_COOKIE = "dreamos_auth_return_to";
@@ -264,15 +265,33 @@ export function logSupabaseAuthorizeUrl(
   );
 }
 
+export function isSafeReturnPathForOrigin(
+  path: string,
+  currentOrigin: string,
+): boolean {
+  if (!path) return false;
+  const lower = path.toLowerCase();
+  if (lower.includes("://")) return false;
+  if (lower.includes("localhost") || lower.includes("127.0.0.1")) {
+    return isLocalhostOrigin(currentOrigin);
+  }
+  return true;
+}
+
 export function resolvePostAuthDestination(
   nextFromQuery: string | null,
   cookieHeader: string | null,
+  currentOrigin?: string,
 ): string {
+  const origin =
+    currentOrigin ??
+    (typeof window !== "undefined" ? window.location.origin : "https://dreamos86.com");
+
   const fromQuery = safeAuthReturnPath(nextFromQuery);
-  if (fromQuery) return fromQuery;
+  if (fromQuery && isSafeReturnPathForOrigin(fromQuery, origin)) return fromQuery;
 
   const fromCookie = readAuthReturnToFromCookieHeader(cookieHeader);
-  if (fromCookie) return fromCookie;
+  if (fromCookie && isSafeReturnPathForOrigin(fromCookie, origin)) return fromCookie;
 
   return "/";
 }

@@ -1,7 +1,9 @@
 import type { SupabaseClient, User } from "@supabase/supabase-js";
-import { attachReferralByCode } from "@/lib/referrals/server-referral";
+import {
+  applyReferralForNewUser,
+  grantReferralRewards,
+} from "@/lib/referrals/apply-referral";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
-import { REFERRAL_CREDITS_PER_USER } from "@/lib/referrals/referral-config";
 import {
   isMissingProfileColumnError,
   isPostgrestSchemaOrMissingTableError,
@@ -214,15 +216,23 @@ export async function completeOnboardingForUser(
   }
 
   if (promo) {
-    const applied = await attachReferralByCode(user.id, promo);
-    if (!applied.ok && applied.error !== "insert_failed") {
-      const status =
-        applied.error === "code_not_found"
-          ? 404
-          : applied.error === "self_referral" || applied.error === "referral_limit_reached"
-            ? 400
-            : 400;
-      return { ok: false, status, error: applied.error, code: applied.error };
+    const applied = await applyReferralForNewUser({
+      newUserId: user.id,
+      referralCode: promo,
+      source: "onboarding",
+      operationId: `onboarding_promo:${user.id}`,
+    });
+    if (!applied.ok) {
+      return { ok: false, status: 500, error: applied.error, code: applied.error };
+    }
+    if (!applied.applied && applied.reason === "code_not_found") {
+      return { ok: false, status: 404, error: applied.reason, code: applied.reason };
+    }
+    if (
+      !applied.applied &&
+      (applied.reason === "self_referral" || applied.reason === "referral_limit_reached")
+    ) {
+      return { ok: false, status: 400, error: applied.reason, code: applied.reason };
     }
   }
 
@@ -236,23 +246,25 @@ export async function completeOnboardingForUser(
   const persisted = await persistOnboarding(admin, user, input, answers, now);
   if (!persisted.ok) return persisted;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: claimData, error: claimErr } = await (admin as any).rpc("claim_referral_reward", {
-    p_referred_id: user.id,
-    p_credits: REFERRAL_CREDITS_PER_USER,
-  });
+  const { data: referralRow } = await admin
+    .from("referrals")
+    .select("id, referrer_id")
+    .eq("referred_id", user.id)
+    .maybeSingle();
 
-  if (claimErr && isPostgrestSchemaOrMissingTableError(claimErr.message)) {
-    return {
-      ok: true,
-      alreadyCompleted: persisted.alreadyCompleted,
-      referralClaim: { success: false, error: claimErr.message },
-    };
+  let referralClaim: unknown = null;
+  if (referralRow?.id) {
+    referralClaim = await grantReferralRewards({
+      referrerUserId: referralRow.referrer_id as string,
+      referredUserId: user.id,
+      referralId: referralRow.id as string,
+      operationId: `onboarding_grant:${referralRow.id}`,
+    });
   }
 
   return {
     ok: true,
     alreadyCompleted: persisted.alreadyCompleted,
-    referralClaim: claimData ?? null,
+    referralClaim,
   };
 }

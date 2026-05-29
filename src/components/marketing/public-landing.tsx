@@ -12,6 +12,7 @@ import {
 import { PublicSignupSection } from "@/components/marketing/public-signup-section";
 import { PublicConversionCards } from "@/components/marketing/public-conversion-cards";
 import { HowItWorksDemo } from "@/components/marketing/how-it-works-demo";
+import { PublicPricingSection } from "@/components/marketing/public-pricing-section";
 import { DreamOsStatsSection } from "@/components/os-home/dreamos-stats-section";
 import { WhyDreamOsSection } from "@/components/os-home/why-dreamos-section";
 import { PublicLandingSecondaryCtas } from "@/components/marketing/public-landing-sections";
@@ -191,6 +192,8 @@ export function PublicLanding() {
 
         <PublicConversionCards />
         <HowItWorksDemo />
+
+        <PublicPricingSection />
 
         <motion.div
           initial={{ opacity: 0, y: 12 }}

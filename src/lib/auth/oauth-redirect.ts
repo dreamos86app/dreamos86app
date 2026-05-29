@@ -1,4 +1,8 @@
-import { resolveAppOrigin, isLocalhostOrigin } from "@/lib/url/app-origin";
+import {
+  resolveAppOrigin,
+  isLocalhostOrigin,
+  resolveRequestOrigin,
+} from "@/lib/url/app-origin";
 
 /** Params allowed when forwarding OAuth landings to /auth/callback. */
 export const OAUTH_CALLBACK_ALLOW_PARAMS = new Set([
@@ -25,14 +29,21 @@ const OAUTH_CALLBACK_DENY_PARAMS = new Set([
 /**
  * Canonical OAuth callback host — localhost keeps live port; production uses dreamos86.com.
  */
-export function resolveCanonicalOAuthOrigin(requestOrigin?: string): string {
+export function resolveCanonicalOAuthOrigin(
+  requestOrigin?: string | Request,
+): string {
   let origin: string;
 
   if (typeof window !== "undefined") {
     origin = window.location.origin.replace(/\/$/, "");
+  } else if (requestOrigin instanceof Request) {
+    origin = resolveRequestOrigin(requestOrigin);
   } else if (requestOrigin) {
     try {
       origin = new URL(requestOrigin).origin.replace(/\/$/, "");
+      if (process.env.NODE_ENV === "production" && isLocalhostOrigin(origin)) {
+        origin = "https://dreamos86.com";
+      }
     } catch {
       origin = resolveAppOrigin(requestOrigin);
     }

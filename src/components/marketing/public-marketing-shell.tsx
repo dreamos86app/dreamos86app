@@ -11,6 +11,7 @@ export function PublicMarketingHeader({ className }: { className?: string }) {
   const [mobileOpen, setMobileOpen] = React.useState(false);
 
   const secondaryLinks = [
+    { href: "/pricing", label: "Pricing" },
     { href: "/privacy", label: "Privacy" },
     { href: "/terms", label: "Terms" },
     { href: "/refunds", label: "Refunds" },
@@ -132,6 +133,12 @@ export function PublicMarketingFooter({ className }: { className?: string }) {
             className="text-muted-foreground transition hover:text-foreground hover:underline underline-offset-4"
           >
             Refunds
+          </Link>
+          <Link
+            href="/pricing"
+            className="text-muted-foreground transition hover:text-foreground hover:underline underline-offset-4"
+          >
+            Pricing
           </Link>
           <Link
             href="/contact"

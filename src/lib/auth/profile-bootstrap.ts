@@ -1,7 +1,7 @@
 import type { User } from "@supabase/supabase-js";
 import { readRefCodeFromCookieHeader } from "@/lib/auth/ref-cookie";
 import { createSupabaseAdmin, type SupabaseAdminClient } from "@/lib/supabase/admin";
-import { attachReferralByCode } from "@/lib/referrals/server-referral";
+import { applyReferralForNewUser } from "@/lib/referrals/apply-referral";
 import { isMissingProfileColumnError } from "@/lib/supabase/schema-errors";
 import { ensureUserProfileServer } from "@/lib/auth/ensure-user-profile-server";
 import { ensureWelcomeNotification } from "@/lib/notifications/welcome-notification";
@@ -62,7 +62,7 @@ export interface BootstrapProfileResult {
 
 /**
  * Creates or patches profile rows using the service role (bypasses RLS safely).
- * Does not grant referral credits — that happens in claim_referral_reward after onboarding.
+ * Applies referral attribution and grants Build Credits via applyReferralForNewUser (idempotent).
  */
 export async function bootstrapProfileFromOAuth(
   user: User,
@@ -145,9 +145,16 @@ export async function bootstrapProfileFromOAuth(
     await ensureWelcomeNotification(admin, user.id, displayName);
 
     if (refCodeFromCookie) {
-      const attached = await attachReferralByCode(user.id, refCodeFromCookie);
-      if (!attached.ok && process.env.NODE_ENV !== "production") {
-        console.info("[auth/bootstrap] referral:", attached.error);
+      const applied = await applyReferralForNewUser({
+        newUserId: user.id,
+        referralCode: refCodeFromCookie,
+        source: "oauth_bootstrap",
+        operationId: `oauth_bootstrap:${user.id}`,
+      });
+      if (!applied.ok && process.env.NODE_ENV !== "production") {
+        console.info("[auth/bootstrap] referral:", applied.error);
+      } else if (applied.ok && !applied.applied && process.env.NODE_ENV !== "production") {
+        console.info("[auth/bootstrap] referral skipped:", applied.reason);
       }
     }
 
@@ -183,9 +190,16 @@ export async function bootstrapProfileFromOAuth(
   const canAcceptReferral =
     existing.onboarding_completed !== true && !(existing.referred_by ?? "").trim();
   if (refCodeFromCookie && canAcceptReferral) {
-    const attached = await attachReferralByCode(user.id, refCodeFromCookie);
-    if (!attached.ok && process.env.NODE_ENV !== "production") {
-      console.info("[auth/bootstrap] referral:", attached.error);
+    const applied = await applyReferralForNewUser({
+      newUserId: user.id,
+      referralCode: refCodeFromCookie,
+      source: "oauth_bootstrap",
+      operationId: `oauth_bootstrap:${user.id}`,
+    });
+    if (!applied.ok && process.env.NODE_ENV !== "production") {
+      console.info("[auth/bootstrap] referral:", applied.error);
+    } else if (applied.ok && !applied.applied && process.env.NODE_ENV !== "production") {
+      console.info("[auth/bootstrap] referral skipped:", applied.reason);
     }
   }
 

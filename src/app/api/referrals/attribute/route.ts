@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { attachReferralByCode } from "@/lib/referrals/server-referral";
+import { applyReferralForNewUser } from "@/lib/referrals/apply-referral";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,8 +8,6 @@ export const dynamic = "force-dynamic";
 /**
  * POST /api/referrals/attribute
  * Body: { code: string }
- *
- * Records a pending referral (both users earn credits after onboarding via claim_referral_reward).
  */
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -32,36 +30,35 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "invalid_code" }, { status: 400 });
   }
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("referred_by, onboarding_completed, referral_code")
-    .eq("id", user.id)
-    .maybeSingle();
+  const result = await applyReferralForNewUser({
+    newUserId: user.id,
+    referralCode: code,
+    source: "attribute_api",
+    operationId: `attribute_api:${user.id}`,
+  });
 
-  if ((profile?.referred_by ?? "").trim()) {
-    return NextResponse.json({ error: "existing_user", attributed: false }, { status: 400 });
-  }
-
-  if (profile?.onboarding_completed === true) {
-    return NextResponse.json({ error: "existing_user", attributed: false }, { status: 400 });
-  }
-
-  if (profile?.referral_code?.trim().toUpperCase() === code.trim().toUpperCase()) {
-    return NextResponse.json({ error: "self_referral" }, { status: 400 });
-  }
-
-  const result = await attachReferralByCode(user.id, code);
   if (!result.ok) {
-    const status =
-      result.error === "code_not_found"
-        ? 404
-        : result.error === "self_referral" || result.error === "referral_limit_reached"
-          ? 400
-          : result.error === "no_profile"
-            ? 409
-            : 400;
-    return NextResponse.json({ error: result.error }, { status });
+    return NextResponse.json({ error: result.error }, { status: 500 });
   }
 
-  return NextResponse.json({ attributed: true });
+  if (!result.applied) {
+    const status =
+      result.reason === "code_not_found"
+        ? 404
+        : result.reason === "existing_user" || result.reason === "already_referred"
+          ? 400
+          : result.reason === "self_referral" || result.reason === "referral_limit_reached"
+            ? 400
+            : 400;
+    return NextResponse.json(
+      { error: result.reason ?? "not_applied", attributed: false },
+      { status },
+    );
+  }
+
+  return NextResponse.json({
+    attributed: true,
+    referralId: result.referralId,
+    rewards: result.rewards,
+  });
 }
