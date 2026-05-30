@@ -6,6 +6,7 @@ import type {
   AgentWorkflowEventStatus,
 } from "@/lib/build/workflow-stream-types";
 import { mapActivePhaseFromJobType } from "@/lib/build/workflow-status-guards";
+import { mapUserFacingWorkflowEvent } from "@/lib/workflow/user-facing-workflow-events";
 
 const GENERIC_TITLES = new Set([
   "Understanding your app",
@@ -17,9 +18,6 @@ const GENERIC_TITLES = new Set([
   "Applying repair pass",
   "Build needs repair",
 ]);
-
-const INTERNAL_LABEL_RE =
-  /worker_claim|build_pipeline_entered|scaffold_fallback|premium_ui_repair|ui_quality_\d|score\s*\d+\s*\/\s*85|code_repair_hard|code_repair_soft|planner_model|execution_instance|trace_stage/i;
 
 function parseLineCounts(detail: string | null | undefined): {
   added?: number;
@@ -84,31 +82,30 @@ function stableKeyForRow(
   return `${category}:${title.trim().toLowerCase()}:${filePath ?? ""}`;
 }
 
-function sanitizeInternalLabel(text: string): string | null {
-  const t = text.trim();
-  if (!t || INTERNAL_LABEL_RE.test(t)) return null;
-  return t;
-}
-
-function preferTitle(row: BuildJobEventRow): string {
+function rowToStreamEvent(row: BuildJobEventRow, terminal: boolean): AgentWorkflowEvent | null {
   const meta = row.metadata ?? {};
-  if (typeof meta.display_title === "string" && meta.display_title.trim()) {
-    const display = sanitizeInternalLabel(meta.display_title);
-    if (display) return display;
-  }
-  const title = sanitizeInternalLabel(row.title?.trim() ?? "") ?? "";
-  if (title && !GENERIC_TITLES.has(title)) return title;
-  if (row.detail?.trim() && row.detail.length < 120 && !GENERIC_TITLES.has(row.detail.trim())) {
-    return row.detail.trim();
-  }
-  return title || row.detail?.trim() || "Working";
-}
+  const mapped = mapUserFacingWorkflowEvent({
+    type: row.type,
+    title: row.title,
+    detail: row.detail,
+    filePath: row.file_path,
+    metadata: meta,
+  });
+  if (mapped.hidden) return null;
 
-function rowToStreamEvent(row: BuildJobEventRow, terminal: boolean): AgentWorkflowEvent {
-  const meta = row.metadata ?? {};
-  const category = categoryForJobType(row.type, meta);
-  const title = preferTitle(row);
-  const filePath = row.file_path ?? undefined;
+  let category = categoryForJobType(row.type, meta);
+  if (mapped.streamCategory === "assistant_message") category = "assistant_message";
+  else if (mapped.isFileEvent) {
+    category =
+      row.type === "editing_file" || mapped.streamCategory === "file_edited"
+        ? "file_edited"
+        : "file_created";
+  } else if (mapped.streamCategory) {
+    category = mapped.streamCategory as AgentWorkflowCategory;
+  }
+
+  const title = mapped.title;
+  const filePath = mapped.filePath ?? undefined;
   const counts = parseLineCounts(row.detail);
   const added =
     typeof meta.added_lines === "number"
@@ -119,13 +116,15 @@ function rowToStreamEvent(row: BuildJobEventRow, terminal: boolean): AgentWorkfl
   const removed =
     typeof meta.removed_lines === "number" ? meta.removed_lines : counts.removed;
 
-  let status: AgentWorkflowEventStatus = terminal ? "done" : "active";
+  let status: AgentWorkflowEventStatus = "done";
   if (
     category === "failed_before_generation" ||
     category === "failed_after_generation"
   ) {
     status = "failed";
   } else if (category === "completed" || category === "partial_credit_stop") {
+    status = "done";
+  } else if (!terminal) {
     status = "done";
   }
 
@@ -145,8 +144,8 @@ function rowToStreamEvent(row: BuildJobEventRow, terminal: boolean): AgentWorkfl
   return {
     id: row.id,
     category,
-    title,
-    subtitle: row.detail && row.detail !== title ? row.detail : undefined,
+      title,
+      subtitle: mapped.subtitle,
     progress: row.progress_percent ?? undefined,
     phase: mapActivePhaseFromJobType(row.type),
     status,
@@ -169,6 +168,7 @@ export function coalesceWorkflowStreamEvents(
 
   for (const row of rows) {
     const ev = rowToStreamEvent(row, terminal);
+    if (!ev) continue;
     const prev = byKey.get(ev.stableKey);
     if (!prev) {
       byKey.set(ev.stableKey, ev);
@@ -216,6 +216,72 @@ export function extractAssistantMessages(events: AgentWorkflowEvent[]): AgentWor
   return events.filter((e) => e.category === "assistant_message");
 }
 
+/** Keep only the latest phase_started when several arrive back-to-back. */
+export function collapseRedundantPhaseStarted(
+  events: AgentWorkflowEvent[],
+): AgentWorkflowEvent[] {
+  const out: AgentWorkflowEvent[] = [];
+  const seenTitle = new Set<string>();
+  for (const ev of events) {
+    if (ev.category === "phase_started" && out.length > 0) {
+      const last = out[out.length - 1];
+      if (last.category === "phase_started") {
+        out[out.length - 1] = ev;
+        continue;
+      }
+    }
+    const key = `${ev.category}:${ev.title.trim().toLowerCase()}`;
+    if (seenTitle.has(key) && ev.category !== "file_created" && ev.category !== "file_edited") {
+      continue;
+    }
+    seenTitle.add(key);
+    out.push(ev);
+  }
+  return out;
+}
+
+/** Only the latest in-progress step shows a spinner; earlier steps read as done. */
+export function applySingleActiveWorkflowStep(
+  events: AgentWorkflowEvent[],
+  working: boolean,
+): AgentWorkflowEvent[] {
+  if (events.length === 0) return events;
+  if (!working) {
+    return events.map((e) => ({
+      ...e,
+      status: e.status === "failed" ? "failed" : "done",
+    }));
+  }
+
+  let activeIndex = events.length - 1;
+  while (activeIndex >= 0) {
+    const e = events[activeIndex];
+    if (
+      e.status !== "failed" &&
+      e.category !== "completed" &&
+      e.category !== "partial_credit_stop"
+    ) {
+      break;
+    }
+    activeIndex -= 1;
+  }
+  if (activeIndex < 0) activeIndex = events.length - 1;
+
+  return events.map((e, i) => ({
+    ...e,
+    status:
+      e.status === "failed"
+        ? "failed"
+        : e.category === "completed" || e.category === "partial_credit_stop"
+          ? "done"
+          : i < activeIndex
+            ? "done"
+            : i === activeIndex
+              ? "active"
+              : "done",
+  }));
+}
+
 export function recentTimelineEvents(
   events: AgentWorkflowEvent[],
   limit = 8,
@@ -226,4 +292,17 @@ export function recentTimelineEvents(
       !GENERIC_TITLES.has(e.title),
   );
   return filtered.slice(-limit);
+}
+
+/** Chat timeline: coalesce DB rows, one active spinner, no phase spam. */
+export function workflowTimelineForChat(
+  rows: BuildJobEventRow[],
+  options?: { terminal?: boolean; limit?: number },
+): AgentWorkflowEvent[] {
+  const terminal = options?.terminal ?? false;
+  const limit = options?.limit ?? 20;
+  const coalesced = coalesceWorkflowStreamEvents(rows, { terminal });
+  const collapsed = collapseRedundantPhaseStarted(coalesced);
+  const sequential = applySingleActiveWorkflowStep(collapsed, !terminal);
+  return recentTimelineEvents(sequential, limit);
 }

@@ -148,7 +148,7 @@ export function BuildRunSummaryCard({
               Repair build
             </button>
           ) : null}
-          {partial || failed ? (
+          {partial || (failed && !showPreviewActions) ? (
             <>
               <Link
                 href="/pricing"
@@ -165,14 +165,7 @@ export function BuildRunSummaryCard({
                 </button>
               ) : null}
             </>
-          ) : (
-            <Link
-              href="/settings"
-              className="rounded-xl bg-surface px-3 py-2 text-[11.5px] font-medium text-muted-foreground ring-1 ring-border"
-            >
-              Add credits
-            </Link>
-          )}
+          ) : null}
         </div>
       </div>
     </div>

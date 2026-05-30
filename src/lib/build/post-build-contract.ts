@@ -6,7 +6,11 @@ import {
   countComponentFiles,
   findMissingRelativeImports,
 } from "@/lib/build/import-graph";
-import { evaluateBuildSuccessContract, type BuildSuccessContractResult } from "@/lib/build/build-success-contract";
+import {
+  evaluateBuildSuccessContract,
+  MIN_RENDERABLE_FILES,
+  type BuildSuccessContractResult,
+} from "@/lib/build/build-success-contract";
 import {
   checkGeneratedUiQuality,
   type GeneratedUiQualityResult,
@@ -70,6 +74,35 @@ function requiredPagesMissing(files: BuildFile[], slugs: string[]): string[] {
     return !hasPage;
   });
 }
+
+const COSMETIC_FAILURE_PREFIXES = [
+  "app_icon_missing",
+  "app_name_untitled",
+  "ui_quality_",
+  "ui_too_basic",
+] as const;
+
+/** Failures that must not block preview or show repair UI when files were saved. */
+export function isCosmeticOnlyBuildFailure(failures: string[]): boolean {
+  if (failures.length === 0) return false;
+  return failures.every((f) =>
+    COSMETIC_FAILURE_PREFIXES.some((p) => f === p || f.startsWith(p)),
+  );
+}
+
+const NON_BLOCKING_WITH_SAVED_FILES_RE =
+  /^(app_icon_missing|app_name_untitled|ui_too_basic|missing_app_layout|missing_app_page)$|^ui_quality_|^route_pages_|^components_|^renderable_files_/;
+
+/** Enough files saved — preview is useful even if quality/icon checks did not pass. */
+export function canCompleteWithSavedFiles(fileCount: number, failures: string[]): boolean {
+  if (fileCount < MIN_RENDERABLE_FILES) return false;
+  if (failures.length === 0) return true;
+  return failures.every(
+    (f) => NON_BLOCKING_WITH_SAVED_FILES_RE.test(f) || f.startsWith("persisted_"),
+  );
+}
+
+export { MIN_RENDERABLE_FILES };
 
 export function evaluatePostBuildContract(input: PostBuildContractInput): PostBuildContractResult {
   const renderable = filterRenderableBuildFiles(input.files);
@@ -173,12 +206,18 @@ export function evaluatePostBuildContract(input: PostBuildContractInput): PostBu
       : buildContract.passed,
   );
 
+  const cosmeticOnly =
+    renderable.length >= STANDARD_MIN_RENDERABLE_FILES &&
+    isCosmeticOnlyBuildFailure(filteredFailures) &&
+    missingImports.length === 0;
+
   const passed = Boolean(
-    filteredFailures.length === 0 &&
-      contractOk &&
-      missingImports.length === 0 &&
-      (validation.ok ||
-        (input.scaffoldFallbackUsed && renderable.length >= STANDARD_MIN_RENDERABLE_FILES)),
+    cosmeticOnly ||
+      (filteredFailures.length === 0 &&
+        contractOk &&
+        missingImports.length === 0 &&
+        (validation.ok ||
+          (input.scaffoldFallbackUsed && renderable.length >= STANDARD_MIN_RENDERABLE_FILES))),
   );
 
   const hasRenderableFiles = renderable.length > 0;

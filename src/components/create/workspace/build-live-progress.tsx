@@ -9,11 +9,22 @@ import { Loader2 } from "lucide-react";
 export function BuildLiveProgress({
   progress,
   className,
+  buildStartedAtMs,
+  openerText,
 }: {
   progress: BuildJobPollState | null;
   className?: string;
+  buildStartedAtMs?: number;
+  openerText?: string;
 }) {
-  return <AgentWorkflowStream progress={progress} className={className} />;
+  return (
+    <AgentWorkflowStream
+      progress={progress}
+      className={className}
+      buildStartedAtMs={buildStartedAtMs}
+      openerText={openerText}
+    />
+  );
 }
 
 export function BuildProgressHeader({ active }: { active: boolean }) {

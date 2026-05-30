@@ -1,5 +1,6 @@
 import type { BuildJobEventRow, BuildJobEventType } from "@/lib/build/build-job-events";
 import type { BuildJobPollState } from "@/hooks/use-build-job-progress";
+import { MIN_RENDERABLE_FILES } from "@/lib/build/build-success-contract";
 
 /** Facts computed before showing any terminal status card. */
 export type BuildStatusFacts = {
@@ -282,20 +283,36 @@ export function resolveBuildRunSummary(input: {
   };
 
   let status = resolveWorkflowRunStatus(input.facts);
+  const savedFilesOk = filesCount >= MIN_RENDERABLE_FILES && input.facts.hasFiles;
+  const firstPass = input.facts.repairAttemptCount === 0;
+
   if (input.previewReady && (status === "failed_before_generation" || status === "failed_after_generation")) {
-    status = input.facts.failureKind === "repair_needed" ? "repair_needed" : "completed";
+    status = input.facts.failureKind === "repair_needed" && !firstPass ? "repair_needed" : "completed";
   }
   if (input.facts.hasFiles && status === "failed_before_generation") {
-    status = "failed_after_generation";
+    status = firstPass && savedFilesOk ? "completed" : "failed_after_generation";
+  }
+
+  if (
+    savedFilesOk &&
+    firstPass &&
+    (status === "failed_after_generation" || status === "repair_needed")
+  ) {
+    status = input.previewReady !== false ? "completed" : "generating_files";
   }
 
   const block = copy[status];
-  const showRefundLine = input.facts.creditsRefunded;
-  const showRepairActions =
-    status === "repair_needed" ||
-    status === "failed_after_generation" ||
-    status === "repair_failed";
-  const showPreviewActions = status === "completed" || status === "preview_ready";
+  let showRefundLine = input.facts.creditsRefunded;
+  let showRepairActions =
+    status === "repair_failed" ||
+    (status === "repair_needed" && input.facts.repairAttemptCount > 1);
+  let showPreviewActions = status === "completed" || status === "preview_ready";
+
+  if (savedFilesOk && firstPass && status === "completed") {
+    showRepairActions = false;
+    showRefundLine = false;
+    showPreviewActions = true;
+  }
   const variant: BuildRunSummaryResolved["variant"] =
     status === "completed" || status === "preview_ready"
       ? "completed"

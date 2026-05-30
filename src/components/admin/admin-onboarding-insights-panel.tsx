@@ -163,6 +163,7 @@ export function AdminOnboardingInsightsPanel() {
                     </p>
                     <p className="truncate text-[11px] text-muted-foreground">
                       {u.hearAbout ?? "—"}
+                      {u.promoCode ? ` · Promo: ${u.promoCode}` : ""}
                       {u.completedAt
                         ? ` · ${new Date(u.completedAt).toLocaleDateString()}`
                         : ""}

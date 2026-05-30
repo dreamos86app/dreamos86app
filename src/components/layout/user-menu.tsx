@@ -16,8 +16,8 @@ import { useAuthStore } from "@/lib/stores/auth-store";
 import { useCreditsStore } from "@/lib/stores/credits-store";
 import { CreditsTracker } from "@/components/credits/credits-tracker";
 import { PlanBadge } from "@/components/billing/plan-badge";
-import { getEntitlements } from "@/lib/billing/plan-entitlements";
 import { normalizePlanId } from "@/lib/billing/plans";
+import { isHighestPaidPlan, nextUpgradePlanId } from "@/lib/billing/upgrade-policy";
 import { resolveEffectivePlanId } from "@/lib/billing/resolve-effective-plan-id";
 import { resolveDreamSpaceLabel } from "@/lib/dream-space";
 import { resolveDisplayName } from "@/lib/profile-display";
@@ -87,10 +87,11 @@ export function UserMenu() {
     storePlanId: planId,
     isCreditsConfirmed: isConfirmed,
   });
-  const entitlements = getEntitlements(effectivePlanId);
   const dreamLabel = resolveDreamSpaceLabel(safeProfile, hydrated ? user : null);
   const displayName = resolveDisplayName(safeProfile, hydrated ? user : null);
-  const isFree = entitlements.tier === "free";
+  const atHighestPlan = isHighestPaidPlan(effectivePlanId);
+  const nextPlan = nextUpgradePlanId(effectivePlanId);
+  const upgradeHref = nextPlan ? `/settings/billing?upgrade=${nextPlan}` : "/settings/billing";
 
   React.useEffect(() => {
     if (!open) return;
@@ -185,16 +186,24 @@ export function UserMenu() {
             </div>
 
             <div className="p-2">
-              {isFree && (
+              {!atHighestPlan && nextPlan ? (
                 <Link
-                  href="/pricing"
+                  href={upgradeHref}
                   onClick={() => setOpen(false)}
                   className="mb-2 flex w-full items-center justify-center gap-1.5 rounded-xl bg-accent px-3 py-2 text-[12px] font-semibold text-white transition hover:bg-accent/90"
                 >
                   <ArrowUpRight className="size-3.5" strokeWidth={2.5} />
                   Upgrade
                 </Link>
-              )}
+              ) : atHighestPlan ? (
+                <Link
+                  href="/settings/billing"
+                  onClick={() => setOpen(false)}
+                  className="mb-2 flex w-full items-center justify-center gap-1.5 rounded-xl bg-muted/60 px-3 py-2 text-[12px] font-medium text-foreground ring-1 ring-border transition hover:bg-muted"
+                >
+                  Highest plan · Manage billing
+                </Link>
+              ) : null}
               {menuItems.map((item) => (
                 <MenuRow key={item.id} item={item} onClose={() => setOpen(false)} />
               ))}

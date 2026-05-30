@@ -43,6 +43,33 @@ const CHART_COLORS = [
   "#6366f1",
 ];
 
+function pickPromoCode(
+  row: {
+    promo_code?: string | null;
+    answers?: unknown;
+  },
+  profile?: { onboarding_answers?: unknown; referred_by?: string | null; signup_referral_code?: string | null },
+): string | null {
+  const direct = row.promo_code?.trim();
+  if (direct) return direct;
+
+  for (const blob of [row.answers, profile?.onboarding_answers]) {
+    if (blob && typeof blob === "object" && !Array.isArray(blob)) {
+      const a = blob as Record<string, unknown>;
+      const code =
+        (typeof a.promo_code === "string" ? a.promo_code : null) ||
+        (typeof a.promoCode === "string" ? a.promoCode : null) ||
+        (typeof a.referral_code === "string" ? a.referral_code : null);
+      if (code?.trim()) return code.trim();
+    }
+  }
+
+  const signupRef = profile?.signup_referral_code?.trim();
+  if (signupRef) return signupRef;
+  if (profile?.referred_by) return `referred:${profile.referred_by.slice(0, 8)}…`;
+  return null;
+}
+
 function pickHearAbout(
   row: { referral_source?: string | null; answers?: unknown },
   profileAnswers?: unknown,
@@ -54,10 +81,10 @@ function pickHearAbout(
     if (blob && typeof blob === "object" && !Array.isArray(blob)) {
       const a = blob as Record<string, unknown>;
       const fromAnswers =
-        (typeof a.hear_about === "string" && a.hear_about) ||
-        (typeof a.heard_about_us === "string" && a.heard_about_us) ||
-        (typeof a.referral_source === "string" && a.referral_source);
-      if (fromAnswers) return String(fromAnswers).trim();
+        (typeof a.hear_about === "string" ? a.hear_about : null) ||
+        (typeof a.heard_about_us === "string" ? a.heard_about_us : null) ||
+        (typeof a.referral_source === "string" ? a.referral_source : null);
+      if (fromAnswers?.trim()) return fromAnswers.trim();
     }
   }
   return null;
@@ -91,13 +118,26 @@ export async function loadOnboardingInsights(options: {
   const offset = Math.max(options.offset ?? 0, 0);
   const admin = createSupabaseAdmin();
 
-  const { data: onboardingRows, error: onboardingErr } = await admin
-    .from("onboarding")
-    .select(
-      "user_id, completed_at, referral_source, use_case, experience_level, answers, workspace_name",
-    )
-    .not("completed_at", "is", null)
-    .order("completed_at", { ascending: false });
+  const [{ data: onboardingRows, error: onboardingErr }, { count: totalCount }, { data: chartRows }] =
+    await Promise.all([
+      admin
+        .from("onboarding")
+        .select(
+          "user_id, completed_at, referral_source, use_case, experience_level, answers, workspace_name",
+        )
+        .not("completed_at", "is", null)
+        .order("completed_at", { ascending: false })
+        .range(offset, offset + limit - 1),
+      admin
+        .from("onboarding")
+        .select("user_id", { count: "exact", head: true })
+        .not("completed_at", "is", null),
+      admin
+        .from("onboarding")
+        .select("referral_source, use_case, experience_level, answers")
+        .not("completed_at", "is", null)
+        .limit(2000),
+    ]);
 
   if (onboardingErr) {
     throw new Error(onboardingErr.message);
@@ -108,12 +148,20 @@ export async function loadOnboardingInsights(options: {
 
   const profilesById = new Map<
     string,
-    { email: string | null; display_name: string | null; onboarding_answers: unknown }
+    {
+      email: string | null;
+      display_name: string | null;
+      onboarding_answers: unknown;
+      referred_by: string | null;
+      signup_referral_code: string | null;
+    }
   >();
   if (userIds.length > 0) {
     const { data: profiles } = await admin
       .from("profiles")
-      .select("id, email, display_name, full_name, onboarding_answers, use_case, experience_level, referred_by")
+      .select(
+        "id, email, display_name, full_name, onboarding_answers, use_case, experience_level, referred_by, signup_referral_code",
+      )
       .in("id", userIds);
 
     for (const p of profiles ?? []) {
@@ -124,6 +172,8 @@ export async function loadOnboardingInsights(options: {
           (p.full_name as string | null) ??
           null,
         onboarding_answers: p.onboarding_answers,
+        referred_by: (p.referred_by as string | null) ?? null,
+        signup_referral_code: (p.signup_referral_code as string | null) ?? null,
       });
     }
   }
@@ -132,12 +182,30 @@ export async function loadOnboardingInsights(options: {
   const buildRows: Array<{ label: string }> = [];
   const expRows: Array<{ label: string }> = [];
 
-  const allUsers: OnboardingUserRow[] = completed.map((row) => {
+  for (const row of chartRows ?? []) {
+    const hearAbout = pickHearAbout(row, null);
+    const buildGoal = row.use_case?.trim() || "Not specified";
+    const exp = row.experience_level?.trim() ?? "Not specified";
+    hearRows.push({ label: hearAbout ?? "Not specified" });
+    buildRows.push({ label: buildGoal });
+    expRows.push({ label: exp });
+  }
+
+  const pageUsers: OnboardingUserRow[] = completed.map((row) => {
     const userId = row.user_id;
     const profile = profilesById.get(userId);
     const hearAbout = pickHearAbout(row, profile?.onboarding_answers);
-    const buildGoal = row.use_case?.trim() || row.workspace_name?.trim() || null;
+    const answersBlob =
+      row.answers && typeof row.answers === "object" && !Array.isArray(row.answers)
+        ? (row.answers as Record<string, unknown>)
+        : {};
+    const buildGoal =
+      (typeof answersBlob.build_first === "string" ? answersBlob.build_first : null)?.trim() ||
+      row.use_case?.trim() ||
+      row.workspace_name?.trim() ||
+      null;
     const exp = row.experience_level?.trim() ?? null;
+    const promoCode = pickPromoCode(row, profile);
     const answers =
       row.answers && typeof row.answers === "object" && !Array.isArray(row.answers)
         ? (row.answers as Record<string, unknown>)
@@ -147,17 +215,13 @@ export async function loadOnboardingInsights(options: {
           ? (profile.onboarding_answers as Record<string, unknown>)
           : {};
 
-    hearRows.push({ label: hearAbout ?? "Not specified" });
-    buildRows.push({ label: buildGoal ?? "Not specified" });
-    expRows.push({ label: exp ?? "Not specified" });
-
     return {
       userId,
       email: profile?.email ?? null,
       displayName: profile?.display_name ?? null,
       hearAbout,
       buildGoal,
-      promoCode: null,
+      promoCode,
       useCase: row.use_case?.trim() ?? null,
       experienceLevel: exp,
       completedAt: row.completed_at ?? null,
@@ -165,15 +229,15 @@ export async function loadOnboardingInsights(options: {
     };
   });
 
-  const page = allUsers.slice(offset, offset + limit);
+  const totalCompleted = totalCount ?? pageUsers.length;
 
   return {
-    totalCompleted: allUsers.length,
+    totalCompleted,
     hearAbout: aggregateCounts(hearRows),
     buildGoals: aggregateCounts(buildRows),
     experienceLevels: aggregateCounts(expRows),
-    users: page,
-    hasMore: offset + limit < allUsers.length,
+    users: pageUsers,
+    hasMore: offset + limit < totalCompleted,
     offset,
     limit,
   };

@@ -15,6 +15,7 @@ import {
   validateCheckoutPlanInterval,
 } from "@/lib/billing/paddle-billing";
 import { PADDLE_UPGRADE_PRORATION_MODE } from "@/lib/billing/upgrade-policy";
+import { resolvePaddleTransactionCheckoutUrl } from "@/lib/billing/paddle-checkout-url";
 
 function paddleApiBase(): string {
   return paddleEnvironment() === "production"
@@ -23,7 +24,13 @@ function paddleApiBase(): string {
 }
 
 export type PaddleCheckoutResult =
-  | { ok: true; checkoutUrl: string; transactionId?: string }
+  | {
+      ok: true;
+      checkoutUrl: string;
+      transactionId?: string;
+      paddleCheckoutUrlSent: string | null;
+      paddleCheckoutUrlMode: "explicit" | "default";
+    }
   | { ok: false; code: "setup_required" | "api_error" | "invalid_price"; error: string; missing?: string[] };
 
 export type PaddleBillingIntent = "new_subscription" | "upgrade" | "interval_change";
@@ -68,7 +75,34 @@ export async function createPaddleCheckoutSession(input: {
     };
   }
 
+  const checkoutUrlResolution = resolvePaddleTransactionCheckoutUrl();
+  if (!checkoutUrlResolution.ok) {
+    return {
+      ok: false,
+      code: "setup_required",
+      error: checkoutUrlResolution.error,
+    };
+  }
+
   const apiKey = process.env.PADDLE_API_KEY!.trim();
+
+  const transactionBody: Record<string, unknown> = {
+    items: [{ price_id: priceId, quantity: 1 }],
+    customer: { email: input.email },
+    custom_data: {
+      user_id: input.userId,
+      workspace_id: input.userId,
+      plan_id: validated.plan,
+      billing_intent: input.billingIntent ?? "new_subscription",
+      billing_interval: toUpgradePolicyInterval(validated.interval),
+      source: input.source ?? "pricing",
+      test_mode: input.testMode ?? false,
+    },
+  };
+
+  if (checkoutUrlResolution.url) {
+    transactionBody.checkout = { url: checkoutUrlResolution.url };
+  }
 
   try {
     const res = await fetch(`${paddleApiBase()}/transactions`, {
@@ -77,22 +111,7 @@ export async function createPaddleCheckoutSession(input: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        items: [{ price_id: priceId, quantity: 1 }],
-        customer: { email: input.email },
-        custom_data: {
-          user_id: input.userId,
-          workspace_id: input.userId,
-          plan_id: validated.plan,
-          billing_intent: input.billingIntent ?? "new_subscription",
-          billing_interval: toUpgradePolicyInterval(validated.interval),
-          source: input.source ?? "pricing",
-          test_mode: input.testMode ?? false,
-        },
-        checkout: {
-          url: input.successUrl,
-        },
-      }),
+      body: JSON.stringify(transactionBody),
     });
 
     const json = (await res.json()) as {
@@ -123,7 +142,13 @@ export async function createPaddleCheckoutSession(input: {
       testMode: input.testMode,
     });
 
-    return { ok: true, checkoutUrl, transactionId: json.data?.id };
+    return {
+      ok: true,
+      checkoutUrl,
+      transactionId: json.data?.id,
+      paddleCheckoutUrlSent: checkoutUrlResolution.url,
+      paddleCheckoutUrlMode: checkoutUrlResolution.mode,
+    };
   } catch (e) {
     return {
       ok: false,

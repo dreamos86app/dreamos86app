@@ -1164,7 +1164,7 @@ export function AdminUsersPanel() {
                   <td className="px-4 py-3 tabular-nums">
                     {u.tokens_remaining.toLocaleString()}
                     {u.bonus_credits > 0 ? (
-                      <span className="ml-1 text-[10px] text-accent">+{u.bonus_credits}</span>
+                      <span className="ml-1 text-[10px] font-medium text-violet-500">+{u.bonus_credits} bonus</span>
                     ) : null}
                     <span className="block text-[10px] text-muted-foreground">/{u.monthly_token_limit} plan</span>
                   </td>
@@ -1172,7 +1172,7 @@ export function AdminUsersPanel() {
                   <td className="px-4 py-3 tabular-nums">
                     {u.action_credits_remaining.toLocaleString()}
                     {u.action_credits_bonus > 0 ? (
-                      <span className="ml-1 text-[10px] text-accent">+{u.action_credits_bonus}</span>
+                      <span className="ml-1 text-[10px] font-medium text-violet-500">+{u.action_credits_bonus} bonus</span>
                     ) : null}
                     <span className="block text-[10px] text-muted-foreground">/{u.action_credits_plan_allowance} plan</span>
                   </td>

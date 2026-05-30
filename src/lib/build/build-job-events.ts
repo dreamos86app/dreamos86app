@@ -4,9 +4,13 @@ import type { WorkflowEvent, WorkflowEventType } from "@/lib/build/build-pipelin
 import { createServiceRoleClient } from "@/lib/supabase/admin";
 import {
   isBuildEventsSchemaError,
+  isBuildJobEventsTableMissing,
   logBuildEventsSetupWarningOnce,
   markBuildJobEventsTableMissing,
 } from "@/lib/build/build-events-schema-health";
+import { probeBuildJobEventsTable } from "@/lib/build/probe-build-job-events-table";
+import { mapUserFacingWorkflowEvent } from "@/lib/workflow/user-facing-workflow-events";
+import { isValidWorkflowFilePath } from "@/lib/workflow/workflow-file-path";
 
 export type BuildJobEventType =
   | "job_created"
@@ -63,10 +67,14 @@ const WORKFLOW_TO_JOB: Partial<Record<WorkflowEventType, BuildJobEventType>> = {
   done: "completed",
 };
 
-function extractFilePath(detail?: string): string | null {
-  if (!detail) return null;
-  const m = detail.match(/(?:^|\s)([\w./-]+\.(?:tsx|jsx|ts|js|css|json))(?:\s|$)/i);
-  return m?.[1] ?? null;
+function extractFilePath(detail?: string, label?: string, explicit?: string | null): string | null {
+  if (explicit && isValidWorkflowFilePath(explicit)) return explicit;
+  if (!detail && !label) return null;
+  const fromDetail = detail?.match(/(?:^|\s)([\w./-]+\.(?:tsx|jsx|ts|js|css|json|md|svg))(?:\s|$)/i);
+  if (fromDetail?.[1] && isValidWorkflowFilePath(fromDetail[1])) return fromDetail[1];
+  const created = label?.match(/^(?:Created|Updated|Edited)\s+(.+)$/i);
+  if (created?.[1] && isValidWorkflowFilePath(created[1])) return created[1];
+  return null;
 }
 
 export function mapWorkflowEventToJobType(type: WorkflowEventType): BuildJobEventType {
@@ -144,6 +152,10 @@ export async function persistBuildJobEvent(
     metadata: (input.metadata ?? {}) as Json,
   };
 
+  if (isBuildJobEventsTableMissing()) {
+    await probeBuildJobEventsTable();
+  }
+
   const admin = createServiceRoleClient();
   const db = admin ?? writer;
   const { error } = await db.from("build_job_events").insert(row as never);
@@ -172,20 +184,34 @@ export async function persistWorkflowEvent(
   if (ev.type === "failed") return;
 
   const type = mapWorkflowEventToJobType(ev.type);
+  const mapped = mapUserFacingWorkflowEvent({
+    type,
+    title: ev.label,
+    detail: ev.detail,
+    filePath: ev.meta?.filePath ?? null,
+    metadata: {
+      stream_category: ev.meta?.streamCategory,
+      internal_key: ev.detail?.includes(":") ? ev.detail.split(":")[0] : undefined,
+    },
+  });
+  if (mapped.hidden) return;
+
   const filePath =
-    extractFilePath(ev.detail) ??
-    extractFilePath(ev.label) ??
-    (ev.detail && /^[\w./-]+\.[a-z0-9]+$/i.test(ev.detail.trim()) ? ev.detail.trim() : null);
+    mapped.filePath ??
+    extractFilePath(ev.detail, ev.label, ev.meta?.filePath ?? null);
+  const jobType =
+    mapped.isFileEvent && filePath
+      ? ev.type === "editing"
+        ? "editing_file"
+        : "writing_file"
+      : type;
   const pct = Math.max(
-    progressPercent ?? defaultProgressForEventType(type),
-    defaultProgressForEventType(type),
+    progressPercent ?? defaultProgressForEventType(jobType),
+    defaultProgressForEventType(jobType),
   );
-  const specificTitle = ev.label?.trim();
-  const useSpecific =
-    Boolean(specificTitle) &&
-    specificTitle !== userTitleForJobEvent(type, specificTitle);
   const lineMeta = ev.meta?.fileLineMeta;
   const streamCategory =
+    mapped.streamCategory ??
     ev.meta?.streamCategory ??
     (ev.type === "repairing"
       ? "repair_started"
@@ -199,14 +225,14 @@ export async function persistWorkflowEvent(
     jobId: ctx.jobId,
     projectId: ctx.projectId,
     userId: ctx.userId,
-    type,
-    title: useSpecific ? specificTitle! : userTitleForJobEvent(type, ev.label),
-    detail: ev.detail ?? ev.label,
-    filePath: filePath ?? ev.meta?.filePath ?? null,
+    type: jobType,
+    title: mapped.title,
+    detail: mapped.subtitle ?? (mapped.isFileEvent ? filePath : ev.detail ?? ev.label),
+    filePath: mapped.isFileEvent ? filePath : null,
     progressPercent: pct,
     metadata: {
       stream_category: streamCategory,
-      display_title: useSpecific ? specificTitle : undefined,
+      display_title: mapped.title,
       repair_pass: ev.type === "repairing" ? true : undefined,
       ...(lineMeta
         ? {

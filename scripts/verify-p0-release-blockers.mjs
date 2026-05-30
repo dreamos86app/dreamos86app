@@ -113,7 +113,10 @@ const suites = {
     if (!streamUi.includes("workflow-file-card")) throw new Error("file cards missing");
   },
   "workflow-no-giant-single-panel": () => {
-    if (!streamUi.includes("workflow-active-card")) throw new Error("compact active card missing");
+    if (streamUi.includes("workflow-active-card")) throw new Error("nested active card should be removed");
+    if (streamUi.includes("max-h-44 overflow-y-auto")) {
+      throw new Error("workflow must not use nested scroll — chat column scrolls");
+    }
   },
   "workflow-file-cards-line-counts": () => {
     if (!streamUi.includes("addedLines")) throw new Error("line counts on file cards missing");

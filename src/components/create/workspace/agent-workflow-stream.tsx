@@ -13,49 +13,95 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { BuildJobPollState } from "@/hooks/use-build-job-progress";
-import { pickEphemeralMicroStep } from "@/lib/build/build-micro-events";
 import {
+  applySingleActiveWorkflowStep,
+  collapseRedundantPhaseStarted,
   coalesceWorkflowStreamEvents,
-  deriveActiveWorkflowState,
-  recentTimelineEvents,
 } from "@/lib/build/workflow-stream-coalesce";
 import type { AgentWorkflowEvent } from "@/lib/build/workflow-stream-types";
+import { isValidWorkflowFilePath } from "@/lib/workflow/workflow-file-path";
+import {
+  buildEphemeralWorkflowEvents,
+  mergeEphemeralWithServerEvents,
+} from "@/lib/workflow/workflow-ephemeral-steps";
 
-function useEphemeralHint(active: boolean, editing = false) {
-  const [label, setLabel] = React.useState(() => pickEphemeralMicroStep(0, editing));
-  React.useEffect(() => {
-    if (!active) return;
-    let tick = 0;
-    const id = setInterval(() => {
-      tick += 1;
-      setLabel(pickEphemeralMicroStep(tick, editing));
-    }, 2800);
-    return () => clearInterval(id);
-  }, [active, editing]);
-  return label;
-}
-
-function WorkingDots() {
+function isFileEvent(ev: AgentWorkflowEvent): boolean {
   return (
-    <span className="inline-flex gap-0.5" aria-hidden>
-      {[0, 1, 2].map((i) => (
-        <motion.span
-          key={i}
-          className="size-1 rounded-full bg-accent"
-          animate={{ opacity: [0.35, 1, 0.35] }}
-          transition={{ duration: 1, repeat: Infinity, delay: i * 0.2 }}
-        />
-      ))}
-    </span>
+    (ev.category === "file_created" || ev.category === "file_edited" || ev.category === "file_deleted") &&
+    Boolean(ev.filePath && isValidWorkflowFilePath(ev.filePath))
   );
 }
 
+function groupFileEvents(events: AgentWorkflowEvent[]): AgentWorkflowEvent[] {
+  const out: AgentWorkflowEvent[] = [];
+  let i = 0;
+  while (i < events.length) {
+    const ev = events[i];
+    if (!isFileEvent(ev)) {
+      out.push(ev);
+      i += 1;
+      continue;
+    }
+    const batch: AgentWorkflowEvent[] = [ev];
+    let j = i + 1;
+    while (j < events.length && isFileEvent(events[j])) {
+      batch.push(events[j]);
+      j += 1;
+    }
+    if (batch.length >= 4) {
+      out.push({
+        id: `group-${batch[0].id}`,
+        category: "file_created",
+        title: `Created ${batch.length} files`,
+        status: batch.some((b) => b.status === "active") ? "active" : "done",
+        at: batch[batch.length - 1].at,
+        stableKey: `file-group:${batch[0].stableKey}`,
+        metadata: { file_group: batch.map((b) => b.filePath).filter(Boolean) },
+      });
+    } else {
+      out.push(...batch);
+    }
+    i = j;
+  }
+  return out;
+}
+
 function FileChangeCard({ event }: { event: AgentWorkflowEvent }) {
+  const paths = Array.isArray(event.metadata?.file_group)
+    ? (event.metadata.file_group as string[])
+    : null;
+  const [open, setOpen] = React.useState(false);
+
+  if (paths && paths.length > 0) {
+    return (
+      <div className="mr-6 sm:mr-10" data-testid="workflow-file-group">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="flex w-full max-w-md items-center gap-2 rounded-2xl bg-surface/90 px-3 py-2 text-left ring-1 ring-border/60"
+        >
+          <FilePlus className="size-3.5 shrink-0 text-accent/85" />
+          <span className="text-[10.5px] font-medium text-foreground">{event.title}</span>
+          <ChevronDown className={cn("ml-auto size-3.5 transition", open && "rotate-180")} />
+        </button>
+        {open ? (
+          <ul className="mt-1 max-w-md space-y-1 pl-2">
+            {paths.map((p) => (
+              <li key={p}>
+                <code className="font-mono text-[10px] text-muted-foreground">{p}</code>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+    );
+  }
+
   const isCreate = event.category === "file_created";
   const isDelete = event.category === "file_deleted";
   const Icon = isDelete ? FileMinus : isCreate ? FilePlus : FilePen;
   const verb = isDelete ? "Deleted" : isCreate ? "Created" : "Edited";
-  const path = event.filePath ?? event.title;
+  const path = event.filePath!;
   const hasCounts =
     typeof event.addedLines === "number" || typeof event.removedLines === "number";
 
@@ -64,7 +110,7 @@ function FileChangeCard({ event }: { event: AgentWorkflowEvent }) {
       layout
       initial={{ opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
-      className="ml-0 mr-8 flex items-center gap-2 rounded-2xl bg-surface/90 px-3 py-2 ring-1 ring-border/60 sm:mr-12"
+      className="mr-6 flex max-w-md items-center gap-2 rounded-2xl bg-surface/90 px-3 py-2 ring-1 ring-border/60 sm:mr-10"
       data-testid="workflow-file-card"
     >
       <Icon className="size-3.5 shrink-0 text-accent/85" strokeWidth={1.75} />
@@ -80,164 +126,131 @@ function FileChangeCard({ event }: { event: AgentWorkflowEvent }) {
   );
 }
 
-function TimelineRow({ event, reducedMotion }: { event: AgentWorkflowEvent; reducedMotion: boolean }) {
-  if (event.category === "file_created" || event.category === "file_edited" || event.category === "file_deleted") {
-    return <FileChangeCard event={event} />;
-  }
+function AssistantBubble({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      className="mr-6 max-w-[min(100%,34rem)] rounded-2xl bg-accent/[0.07] px-3.5 py-2.5 text-[12.5px] leading-relaxed text-foreground ring-1 ring-accent/20 sm:mr-10"
+      data-testid="workflow-chat-assistant"
+    >
+      {children}
+    </div>
+  );
+}
 
-  const isAssistant = event.category === "assistant_message";
+function ProgressRow({ event, reducedMotion }: { event: AgentWorkflowEvent; reducedMotion: boolean }) {
+  const done = event.status === "done";
+  const active = event.status === "active";
   const failed = event.status === "failed";
 
   return (
     <motion.div
       layout={!reducedMotion}
-      initial={reducedMotion ? false : { opacity: 0, x: -6 }}
-      animate={{ opacity: 1, x: 0 }}
+      initial={reducedMotion ? false : { opacity: 0, y: 3 }}
+      animate={{ opacity: 1, y: 0 }}
       className={cn(
-        "ml-0 mr-8 max-w-[min(100%,28rem)] rounded-2xl px-3 py-2 text-[11px] ring-1 sm:mr-12",
-        isAssistant
-          ? "bg-accent/[0.08] ring-accent/25"
-          : failed
-            ? "bg-destructive/5 ring-destructive/25"
-            : event.status === "done"
-              ? "bg-surface/70 ring-border/50"
-              : "bg-surface/90 ring-border/70",
+        "mr-6 flex max-w-md items-start gap-2 text-[11px] sm:mr-10",
+        done && "opacity-70",
       )}
-      data-testid={isAssistant ? "workflow-chat-assistant" : `workflow-event-${event.category}`}
+      data-testid={`workflow-event-${event.category}`}
     >
-      <div className="flex items-start gap-2">
-        {isAssistant ? (
-          <MessageSquare className="mt-0.5 size-3 shrink-0 text-accent" strokeWidth={1.75} />
-        ) : event.status === "done" ? (
-          <CheckCircle2 className="mt-0.5 size-3 shrink-0 text-accent/80" strokeWidth={1.75} />
-        ) : event.status === "active" ? (
-          <Loader2 className="mt-0.5 size-3 shrink-0 animate-spin text-accent" strokeWidth={2} />
-        ) : null}
-        <div className="min-w-0 flex-1">
-          <p className={cn("font-medium", failed ? "text-destructive" : "text-foreground")}>
-            {event.title}
-          </p>
-          {event.subtitle && event.subtitle !== event.title ? (
-            <p className="mt-0.5 line-clamp-2 text-muted-foreground">{event.subtitle}</p>
-          ) : null}
-        </div>
+      {active ? (
+        <Loader2 className="mt-0.5 size-3 shrink-0 animate-spin text-accent" strokeWidth={2} />
+      ) : done ? (
+        <CheckCircle2 className="mt-0.5 size-3 shrink-0 text-accent/75" strokeWidth={1.75} />
+      ) : failed ? (
+        <span className="mt-1 size-2 shrink-0 rounded-full bg-destructive" />
+      ) : (
+        <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-muted-foreground/40" />
+      )}
+      <div className="min-w-0">
+        <p className={cn("font-medium", failed ? "text-destructive" : "text-foreground")}>{event.title}</p>
+        {event.subtitle ? <p className="mt-0.5 text-muted-foreground">{event.subtitle}</p> : null}
       </div>
     </motion.div>
   );
 }
 
+function TimelineRow({ event, reducedMotion }: { event: AgentWorkflowEvent; reducedMotion: boolean }) {
+  if (isFileEvent(event)) return <FileChangeCard event={event} />;
+  if (event.category === "assistant_message") {
+    return <AssistantBubble>{event.subtitle ?? event.title}</AssistantBubble>;
+  }
+  return <ProgressRow event={event} reducedMotion={reducedMotion} />;
+}
+
+/** Build activity as chat rows — parent chat column owns scrolling. */
 export function AgentWorkflowStream({
   progress,
   className,
+  buildStartedAtMs,
+  openerText,
 }: {
   progress: BuildJobPollState | null;
   className?: string;
+  buildStartedAtMs?: number;
+  openerText?: string;
 }) {
   const reducedMotion = useReducedMotion();
-  const [expanded, setExpanded] = React.useState(false);
-  const working = Boolean(progress && !progress.done);
-  const editing = progress?.latest?.type === "editing_file";
-  const ephemeral = useEphemeralHint(working && !progress?.latest?.title, Boolean(editing));
+  const [now, setNow] = React.useState(() => Date.now());
+
+  React.useEffect(() => {
+    if (!progress || progress.done) return;
+    const t = setInterval(() => setNow(Date.now()), 450);
+    return () => clearInterval(t);
+  }, [progress]);
 
   if (!progress) return null;
 
-  const streamEvents = coalesceWorkflowStreamEvents(progress.events, {
-    terminal: progress.done,
-  });
-  const active = deriveActiveWorkflowState(
-    streamEvents,
-    progress.progressPercent,
-    working ? ephemeral : undefined,
-  );
-  const timeline = recentTimelineEvents(streamEvents, expanded ? 24 : 8);
+  const working = Boolean(!progress.done);
+  const serverRaw = coalesceWorkflowStreamEvents(progress.events, { terminal: progress.done });
+  const serverCollapsed = collapseRedundantPhaseStarted(serverRaw);
+  const serverSequential = applySingleActiveWorkflowStep(serverCollapsed, !progress.done);
+
+  const startedAt =
+    buildStartedAtMs ?? (Date.parse(progress.events[0]?.created_at ?? "") || now - 500);
+  const ephemeral =
+    working && serverSequential.length < 2
+      ? buildEphemeralWorkflowEvents(startedAt, now, openerText)
+      : [];
+  const merged = mergeEphemeralWithServerEvents(ephemeral, serverSequential);
+  const grouped = groupFileEvents(merged);
+  const timeline = applySingleActiveWorkflowStep(grouped, working).slice(-24);
+
+  const active = timeline.find((e) => e.status === "active");
   const failed =
     progress.done &&
     (progress.status === "failed" || progress.latest?.type === "failed");
-  const partialDone = progress.done && progress.latest?.type === "partial_credit_stop";
 
   return (
-    <div className={cn("space-y-3", className)} data-testid="agent-workflow-stream">
-      <div
-        className={cn(
-          "rounded-xl px-3 py-2.5 ring-1",
-          failed
-            ? "bg-destructive/5 ring-destructive/25"
-            : partialDone
-              ? "bg-amber-500/5 ring-amber-500/30"
-              : "bg-accent/[0.07] ring-accent/25",
-        )}
-        data-testid="workflow-active-card"
-      >
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-            {active.phaseLabel}
-          </p>
-          <span className="text-[10px] tabular-nums text-muted-foreground">
-            {active.progressPercent}%
-          </span>
-        </div>
-        <div className="mt-1 flex items-center gap-2">
-          {working ? (
-            <Loader2 className="size-3.5 shrink-0 animate-spin text-accent" strokeWidth={2} />
-          ) : failed ? null : (
-            <CheckCircle2 className="size-3.5 shrink-0 text-accent" strokeWidth={1.75} />
-          )}
-          <p className="min-w-0 flex-1 text-[12px] font-semibold text-foreground">
-            {active.taskLabel}
-            {working && !reducedMotion ? (
-              <span className="ml-1.5 inline-flex align-middle">
-                <WorkingDots />
-              </span>
-            ) : null}
-          </p>
-        </div>
-        {active.currentFile ? (
-          <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground">
-            Current file: {active.currentFile}
-          </p>
-        ) : working && active.ephemeralHint ? (
-          <p className="mt-1 text-[10px] text-muted-foreground">{active.ephemeralHint}</p>
-        ) : null}
-        {progress.latest?.detail && progress.latest.detail !== active.taskLabel ? (
-          <p className="mt-1 line-clamp-2 text-[10.5px] text-muted-foreground">
-            {progress.latest.detail}
-          </p>
-        ) : null}
-      </div>
-
+    <div className={cn("space-y-2.5", className)} data-testid="agent-workflow-stream">
       {progress.reconnecting ? (
         <p className="px-1 text-[10px] text-muted-foreground">Reconnecting to build status…</p>
       ) : null}
 
-      {timeline.length > 0 ? (
-        <div className="space-y-1">
-          <ul className={cn("space-y-1", expanded ? "max-h-72 overflow-y-auto" : "max-h-44 overflow-y-auto")}>
-            <AnimatePresence initial={false}>
-              {timeline.map((ev) => (
-                <li key={ev.stableKey}>
-                  <TimelineRow event={ev} reducedMotion={Boolean(reducedMotion)} />
-                </li>
-              ))}
-            </AnimatePresence>
-          </ul>
-          {streamEvents.length > 8 ? (
-            <button
-              type="button"
-              onClick={() => setExpanded((v) => !v)}
-              className="flex w-full items-center justify-center gap-1 rounded-md py-1 text-[10px] font-medium text-muted-foreground transition hover:bg-surface/80 hover:text-foreground"
-            >
-              {expanded ? "Show less" : "View all activity"}
-              <ChevronDown
-                className={cn("size-3 transition", expanded && "rotate-180")}
-                strokeWidth={2}
-              />
-            </button>
-          ) : null}
+      {active ? (
+        <div
+          className="mr-6 flex max-w-md items-center gap-2 rounded-xl border border-accent/25 bg-accent/[0.06] px-3 py-2 text-[11px] sm:mr-10"
+          data-testid="workflow-active-step"
+        >
+          <Loader2 className="size-3.5 shrink-0 animate-spin text-accent" />
+          <span className="font-medium text-foreground">{active.title}</span>
         </div>
       ) : null}
 
+      <ul className="space-y-2">
+        <AnimatePresence initial={false}>
+          {timeline
+            .filter((ev) => ev.stableKey !== active?.stableKey)
+            .map((ev) => (
+              <li key={ev.stableKey}>
+                <TimelineRow event={ev} reducedMotion={Boolean(reducedMotion)} />
+              </li>
+            ))}
+        </AnimatePresence>
+      </ul>
+
       {failed && progress.error ? (
-        <p className="rounded-lg bg-destructive/10 px-2 py-1.5 text-[10.5px] text-destructive">
+        <p className="mr-6 rounded-lg bg-destructive/10 px-2 py-1.5 text-[10.5px] text-destructive sm:mr-10">
           {progress.error}
         </p>
       ) : null}

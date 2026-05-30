@@ -109,8 +109,8 @@ export const RUNTIME_RPC_CONTRACTS: RpcContract[] = [
   },
   {
     name: "charge_credits",
-    args: ["p_user_id", "p_amount", "p_reason", "p_operation_id"],
-    critical: true,
+    args: ["p_user_id", "p_amount", "p_reason", "p_idempotency_key"],
+    critical: false,
   },
   {
     name: "grant_tokens",

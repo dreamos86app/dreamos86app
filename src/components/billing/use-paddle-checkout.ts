@@ -60,8 +60,7 @@ export function usePaddleCheckout() {
       if (!res.ok) {
         if (json.code === "public_checkout_disabled") {
           toast.error(
-            json.error ??
-              "Public checkout is disabled. Complete owner live test first.",
+            json.error ?? "Billing is being activated. Owner test checkout is available for admins.",
           );
         } else {
           throw new Error(json.error ?? "Checkout could not start");

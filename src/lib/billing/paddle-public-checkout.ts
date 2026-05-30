@@ -7,12 +7,13 @@ export function paddlePublicCheckoutEnabled(): boolean {
 }
 
 export function paddleOwnerTestCheckoutEnabled(): boolean {
-  return process.env.PADDLE_OWNER_TEST_CHECKOUT_ENABLED?.trim().toLowerCase() !== "false";
+  const raw = process.env.PADDLE_OWNER_TEST_CHECKOUT_ENABLED?.trim().toLowerCase();
+  return raw === "true" || raw === "1" || raw === "yes";
 }
 
 export function publicCheckoutBlockedMessage(): string {
   if (!paddlePublicCheckoutEnabled()) {
-    return "Public checkout is disabled while live billing is being verified. Owner can test at /admin/billing/paddle/test-checkout.";
+    return "Billing is being activated. Owner test checkout is available for admins.";
   }
   return "Billing checkout is not available yet.";
 }

@@ -40,6 +40,33 @@ export function planRank(plan: string | null | undefined): number {
   return PLAN_RANK[normalizePlanId(plan ?? "free") as PlanId] ?? 0;
 }
 
+/** Ordered upgrade ladder through Infinity VII. */
+export const UPGRADE_PLAN_LADDER = [
+  "free",
+  "starter",
+  "pro",
+  "infinity_i",
+  "infinity_ii",
+  "infinity_iii",
+  "infinity_iv",
+  "infinity_v",
+  "infinity_vi",
+  "infinity_vii",
+] as const;
+
+export function isHighestPaidPlan(plan: string | null | undefined): boolean {
+  return normalizePlanId(plan ?? "free") === "infinity_vii";
+}
+
+/** Next plan in the ladder, or null at Infinity VII. */
+export function nextUpgradePlanId(plan: string | null | undefined): string | null {
+  const id = normalizePlanId(plan ?? "free");
+  const idx = UPGRADE_PLAN_LADDER.indexOf(id as (typeof UPGRADE_PLAN_LADDER)[number]);
+  if (idx < 0) return "starter";
+  if (idx >= UPGRADE_PLAN_LADDER.length - 1) return null;
+  return UPGRADE_PLAN_LADDER[idx + 1];
+}
+
 export function isPlanUpgrade(fromPlan: string, toPlan: string): boolean {
   return planRank(toPlan) > planRank(fromPlan);
 }

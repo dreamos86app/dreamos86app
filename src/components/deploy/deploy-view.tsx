@@ -41,7 +41,11 @@ const STATUS_CONFIG = {
 
 export function DeployView() {
   const [deployments, setDeployments] = React.useState<DeploymentRow[]>([]);
-  const [connection, setConnection] = React.useState<{ state: string; message?: string } | null>(null);
+  const [connection, setConnection] = React.useState<{
+    state: string;
+    message?: string;
+    showDetails?: boolean;
+  } | null>(null);
   const [loading, setLoading] = React.useState(true);
 
   const refresh = React.useCallback(async () => {
@@ -93,11 +97,13 @@ export function DeployView() {
         </div>
       </motion.div>
 
-      {connection && (
+      {connection && connection.showDetails !== false && (
         <div
           className={cn(
             "rounded-xl border p-4 text-[13px]",
-            connection.state === "missing_env" || connection.state === "token_invalid"
+            connection.state === "missing_env" ||
+              connection.state === "token_invalid" ||
+              connection.state === "needs_project_link"
               ? "border-amber-500/30 bg-amber-500/10"
               : "border-border bg-surface/60",
           )}

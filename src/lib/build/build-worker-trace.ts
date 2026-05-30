@@ -238,29 +238,33 @@ export async function persistTraceStage(
   lastPersistedTraceAt.set(input.jobId, now);
 
   const title = FRIENDLY_EVENT_TITLE[input.stage] ?? "Working on your app";
+  const isFileStage =
+    input.stage === "persist_started" ||
+    input.stage === "persist_completed";
   await persistBuildJobEvent(writer, {
     jobId: input.jobId,
     projectId: input.projectId,
     userId: input.userId,
-    type:
-      input.stage.includes("persist") || input.stage === "scaffold_fallback_applied"
-        ? "writing_file"
-        : input.stage.includes("preview")
-          ? "preparing_preview"
-          : input.stage.includes("contract")
-            ? "checking_file"
-            : input.stage.includes("identity")
-              ? "generating_app_identity"
-              : input.stage.includes("file_generation") || input.stage.includes("scaffold")
-                ? "writing_file"
-                : input.stage.includes("plan") || input.stage.includes("planner")
-                  ? "planning_app"
-                  : "understanding_request",
+    type: isFileStage
+      ? "saving_files"
+      : input.stage.includes("preview")
+        ? "preparing_preview"
+        : input.stage.includes("contract")
+          ? "checking_file"
+          : input.stage.includes("identity")
+            ? "generating_app_identity"
+            : input.stage === "scaffold_fallback_applied" || input.stage === "file_generation_started"
+              ? "planning_app"
+              : input.stage.includes("plan") || input.stage.includes("planner")
+                ? "planning_app"
+                : "understanding_request",
     title,
     detail: input.detail ?? title,
     progressPercent: progressForStage(input.stage),
     metadata: {
       trace_stage: input.stage,
+      hidden:
+        input.stage === "worker_claim_attempt" || input.stage === "build_pipeline_entered",
       operation_id: input.snap.operationId,
       execution_instance_id: input.snap.executionInstanceId,
       model_call_state: input.snap.modelCall.state,

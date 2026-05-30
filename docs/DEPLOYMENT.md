@@ -151,6 +151,7 @@ DreamOS86 paid plans bill through **Paddle** (Starter, Pro, Infinity I–VII). G
 | `PADDLE_API_KEY` | Server only |
 | `PADDLE_WEBHOOK_SECRET` | Server only |
 | `NEXT_PUBLIC_PADDLE_CLIENT_TOKEN` | Only public Paddle token (client checkout) |
+| `PADDLE_CHECKOUT_URL` | Production: approved checkout domain (e.g. `https://dreamos86.com`) or leave empty for Paddle default payment link. Never localhost in live mode. |
 | `PADDLE_*_MONTHLY_PRICE_ID` / `PADDLE_*_ANNUAL_PRICE_ID` | `pri_*` per plan tier (18 price IDs for 9 paid plans) |
 | `PADDLE_*_PRODUCT_ID` | Optional `pro_*` for admin/debug |
 
@@ -171,7 +172,7 @@ Run: `npm run verify:paddle-integration` and `npm run typecheck`.
 
 **Production go-live checklist**
 
-1. Set Vercel Production: `PADDLE_ENVIRONMENT=production`, live `PADDLE_API_KEY` (`pdl_live…`), `NEXT_PUBLIC_PADDLE_CLIENT_TOKEN` (`live_…`), `PADDLE_WEBHOOK_SECRET`, all 18 `pri_*` price IDs, optional `pro_*` product IDs, `PADDLE_PUBLIC_CHECKOUT_ENABLED=false`.
+1. Set Vercel Production: `PADDLE_ENVIRONMENT=production`, live `PADDLE_API_KEY` (`pdl_live…`), `NEXT_PUBLIC_PADDLE_CLIENT_TOKEN` (`live_…`), `PADDLE_WEBHOOK_SECRET`, `PADDLE_CHECKOUT_URL=https://dreamos86.com` (or omit for Paddle default link), all 18 `pri_*` price IDs, optional `pro_*` product IDs, `PADDLE_PUBLIC_CHECKOUT_ENABLED=false`.
 2. Redeploy production.
 3. Open `https://dreamos86.com/admin/billing/paddle` — env consistency green, all price IDs configured. Click **Verify via Paddle API**.
 4. Paddle webhook destination: `https://dreamos86.com/api/webhooks/paddle` (Usage type: **Both**).

@@ -18,12 +18,13 @@ import { refreshCredits, useCreditsStore } from "@/lib/stores/credits-store";
 import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { PlanUpgradeModal } from "@/components/billing/plan-upgrade-modal";
+import { PLAN_DISPLAY } from "@/lib/billing/plans";
+import { BILLABLE_PLAN_IDS, billablePlanDefinition, type BillablePlanId } from "@/lib/billing/billable-plans";
 import {
-  PLAN_DISPLAY,
-  STRIPE_CHECKOUT_PLANS,
-  type StripeCheckoutPlan,
-} from "@/lib/billing/plans";
-import { UPGRADE_POLICY_COPY } from "@/lib/billing/upgrade-policy";
+  UPGRADE_POLICY_COPY,
+  isHighestPaidPlan,
+} from "@/lib/billing/upgrade-policy";
+import { resolveBillablePlanAction, resolvePlanAction } from "@/lib/billing/plan-action-resolver";
 
 type BillingState = {
   planId: string;
@@ -53,8 +54,8 @@ export function BillingSettings() {
   const { build, action, planId: creditsPlanId, loading: creditsLoading, error: creditsError, isConfirmed } = useCreditsStore();
   const [billing, setBilling] = React.useState<BillingState | null>(null);
   const [loading, setLoading] = React.useState(true);
-  const [upgradePlan, setUpgradePlan] = React.useState<StripeCheckoutPlan | null>(null);
-  const [downgradePlan, setDowngradePlan] = React.useState<StripeCheckoutPlan | "free" | null>(null);
+  const [upgradePlan, setUpgradePlan] = React.useState<BillablePlanId | null>(null);
+  const [downgradePlan, setDowngradePlan] = React.useState<BillablePlanId | "free" | null>(null);
   const [showCancelConfirm, setShowCancelConfirm] = React.useState(false);
   const [acting, setActing] = React.useState(false);
 
@@ -98,15 +99,13 @@ export function BillingSettings() {
     };
   }, [paddleReturn]);
 
-  async function scheduleDowngrade(plan: StripeCheckoutPlan | "free") {
+  async function scheduleDowngrade(plan: BillablePlanId | "free") {
     if (downgradePlan !== plan) {
       setDowngradePlan(plan);
       return;
     }
     setActing(true);
-    const downgradeUrl = paddleReady
-      ? "/api/billing/paddle/downgrade"
-      : "/api/billing/downgrade";
+    const downgradeUrl = "/api/billing/paddle/downgrade";
     const res = await fetch(downgradeUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -129,7 +128,7 @@ export function BillingSettings() {
       return;
     }
     setActing(true);
-    const cancelUrl = paddleReady ? "/api/billing/paddle/cancel" : "/api/billing/cancel";
+    const cancelUrl = "/api/billing/paddle/cancel";
     const res = await fetch(cancelUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -146,24 +145,16 @@ export function BillingSettings() {
     void loadBilling();
   }
 
-  async function openPortal() {
-    setActing(true);
-    const res = await fetch("/api/billing/portal", { method: "POST" });
-    const json = (await res.json()) as { url?: string; error?: string };
-    setActing(false);
-    if (!res.ok) {
-      toast.error(json.error ?? "Portal unavailable");
-      return;
-    }
-    if (json.url) window.location.href = json.url;
-  }
-
   const planId = billing?.planId ?? profile?.plan_id ?? "free";
   const planInfo = PLAN_DISPLAY[planId as keyof typeof PLAN_DISPLAY] ?? PLAN_DISPLAY.free;
   const isPaid = planId !== "free";
-  const stripeReady = billing?.stripe.configured ?? false;
   const paddleReady = billing?.paddle?.configured ?? false;
   const monthlyAction = billing?.monthlyActionCredits ?? action.planAllowance;
+  const atHighestPlan = isHighestPaidPlan(planId);
+  const planChangeTargets: Array<{ id: BillablePlanId | "free"; label: string }> = [
+    { id: "free", label: "Free" },
+    ...BILLABLE_PLAN_IDS.map((id) => ({ id, label: billablePlanDefinition(id).label })),
+  ];
 
   const daysUntilReset = (billing?.resetAt ?? build.resetDate)
     ? Math.max(0, Math.ceil((new Date(billing?.resetAt ?? build.resetDate!).getTime() - Date.now()) / 86400000))
@@ -199,19 +190,6 @@ export function BillingSettings() {
               Missing: {(billing?.paddle?.missing ?? []).join(", ")}
             </p>
           )}
-        </motion.div>
-      )}
-
-      {!stripeReady && !loading && (
-        <motion.div
-          variants={variants.fadeUp}
-          className="rounded-xl border border-border bg-surface px-4 py-3 text-[13px]"
-        >
-          <p className="font-medium text-foreground">Legacy Stripe (optional)</p>
-          <p className="mt-1 text-muted-foreground">
-            Stripe env vars remain for migration only:{" "}
-            {(billing?.stripe.missingEnv ?? []).join(", ") || "not configured"}
-          </p>
         </motion.div>
       )}
 
@@ -265,7 +243,7 @@ export function BillingSettings() {
                     loading={creditsLoading || !isConfirmed}
                     error={creditsError}
                     variant="compact"
-                    showUpgrade={planId === "free" || build.available < build.planAllowance * 0.15}
+                    showUpgrade={!atHighestPlan}
                     onRetry={() => void refreshCredits({ reason: "manual", force: true })}
                   />
                 </div>
@@ -283,9 +261,7 @@ export function BillingSettings() {
                       <CreditCard className="size-3.5 text-muted-foreground" />
                       <p className="text-[11px] font-medium uppercase text-muted-foreground">Billing</p>
                     </div>
-                    <p className="text-[22px] font-bold">
-                      {paddleReady ? "Paddle" : stripeReady ? "Stripe" : "Not configured"}
-                    </p>
+                    <p className="text-[22px] font-bold">{paddleReady ? "Paddle" : "Not configured"}</p>
                   </div>
                 </div>
               </>
@@ -293,24 +269,57 @@ export function BillingSettings() {
           </div>
 
           <div className="border-t border-border bg-surface/50 px-6 py-4 space-y-4">
-            <p className="text-[13px] font-medium text-foreground">Upgrade</p>
+            <p className="text-[13px] font-medium text-foreground">Change plan</p>
             <p className="text-[12px] text-muted-foreground">{UPGRADE_POLICY_COPY.upgradeSummary}</p>
+            {atHighestPlan ? (
+              <p className="text-[12px] text-muted-foreground">You are on the highest plan (Infinity VII).</p>
+            ) : null}
             <div className="flex flex-wrap gap-2">
-              {STRIPE_CHECKOUT_PLANS.map((p) => (
-                <Button
-                  key={p}
-                  variant="outline"
-                  size="sm"
-                  disabled={!paddleReady || acting || planId === p}
-                  onClick={() => setUpgradePlan(p)}
-                >
-                  {PLAN_DISPLAY[p].name} · ${PLAN_DISPLAY[p].priceMonthlyUsd}/mo full price
-                </Button>
-              ))}
+              {planChangeTargets.map((target) => {
+                const action =
+                  target.id === "free"
+                    ? resolvePlanAction(planId, "free")
+                    : resolveBillablePlanAction(planId, target.id);
+                if (action.kind === "current") {
+                  return (
+                    <Button key={target.id} variant="outline" size="sm" disabled>
+                      {action.label}
+                    </Button>
+                  );
+                }
+                if (action.kind === "upgrade" || action.kind === "get") {
+                  return (
+                    <Button
+                      key={target.id}
+                      variant="outline"
+                      size="sm"
+                      disabled={!paddleReady || acting || target.id === "free"}
+                      onClick={() => target.id !== "free" && setUpgradePlan(target.id as BillablePlanId)}
+                    >
+                      {action.label}
+                    </Button>
+                  );
+                }
+                if (action.kind === "downgrade") {
+                  const downId = target.id as BillablePlanId | "free";
+                  return (
+                    <Button
+                      key={target.id}
+                      variant="outline"
+                      size="sm"
+                      disabled={acting}
+                      onClick={() => void scheduleDowngrade(downId)}
+                    >
+                      {downgradePlan === downId ? `Confirm ${action.label}` : action.label}
+                    </Button>
+                  );
+                }
+                return null;
+              })}
             </div>
             {isPaid && (
               <>
-                <p className="text-[13px] font-medium pt-2">Downgrade or cancel</p>
+                <p className="text-[13px] font-medium pt-2">Cancel subscription</p>
                 <p className="text-[12px] text-muted-foreground">
                   {UPGRADE_POLICY_COPY.downgradeSummary} Cancel stops renewal but paid access continues until{" "}
                   {billing?.subscription?.currentPeriodEnd
@@ -318,35 +327,24 @@ export function BillingSettings() {
                     : "period end"}
                   .
                 </p>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={acting}
-                    onClick={() => void scheduleDowngrade("starter")}
-                  >
-                    {downgradePlan === "starter" ? "Confirm downgrade to Starter" : "Downgrade to Starter"}
-                  </Button>
-                  <Button variant="outline" size="sm" disabled={acting} onClick={() => void scheduleDowngrade("free")}>
-                    {downgradePlan === "free" ? "Confirm downgrade to Free (next cycle)" : "Downgrade to Free"}
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    disabled={acting}
-                    onClick={() => void cancelRenewal()}
-                  >
-                    {showCancelConfirm ? "Confirm cancel renewal" : "Cancel renewal"}
-                  </Button>
-                </div>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  disabled={acting}
+                  onClick={() => void cancelRenewal()}
+                >
+                  {showCancelConfirm ? "Confirm cancel renewal" : "Cancel renewal"}
+                </Button>
               </>
             )}
 
-            {isPaid && stripeReady && (
-              <Button variant="secondary" size="sm" disabled={acting} onClick={() => void openPortal()}>
-                <CreditCard className="mr-1.5 size-3.5" />
-                Open Stripe billing portal
-                <ArrowRight className="ml-1 size-3" />
+            {isPaid && paddleReady && (
+              <Button variant="secondary" size="sm" disabled={acting} asChild>
+                <a href="https://my.paddle.com/" target="_blank" rel="noopener noreferrer">
+                  <CreditCard className="mr-1.5 size-3.5" />
+                  Manage subscription in Paddle
+                  <ArrowRight className="ml-1 size-3" />
+                </a>
               </Button>
             )}
           </div>

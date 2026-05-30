@@ -22,6 +22,28 @@ export function missingVercelEnvVars(): string[] {
   return missing;
 }
 
+export async function validateVercelProject(
+  token: string,
+  projectId: string,
+  teamId?: string | null,
+): Promise<{ ok: boolean; projectName?: string; error?: string }> {
+  if (!token || !projectId) return { ok: false, error: "missing_project_id" };
+  const qs = teamId ? `?teamId=${encodeURIComponent(teamId)}` : "";
+  try {
+    const res = await fetch(`https://api.vercel.com/v9/projects/${encodeURIComponent(projectId)}${qs}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) {
+      return { ok: false, error: res.status === 404 ? "project_not_found" : `http_${res.status}` };
+    }
+    const json = (await res.json()) as { name?: string };
+    return { ok: true, projectName: json.name ?? projectId };
+  } catch {
+    return { ok: false, error: "network_error" };
+  }
+}
+
 export async function validateVercelAccessToken(
   token: string,
   teamId?: string | null,
@@ -98,7 +120,24 @@ export async function resolveVercelConnection(
       teamId: cfg.teamId,
       envSyncOk,
       missingEnv,
-      message: "Token OK — link VERCEL_PROJECT_ID or project metadata vercel_project_id.",
+      message:
+        "Token OK — add VERCEL_PROJECT_ID (server env) or vercel_project_id in project metadata, then redeploy.",
+    };
+  }
+
+  const projectCheck = await validateVercelProject(cfg.token, cfg.projectId!, cfg.teamId);
+  if (!projectCheck.ok) {
+    return {
+      state: "needs_project_link",
+      hasToken: true,
+      tokenValid: tokenValid ?? true,
+      teamConfigured,
+      projectLinked: false,
+      projectId: cfg.projectId,
+      teamId: cfg.teamId,
+      envSyncOk,
+      missingEnv,
+      message: `VERCEL_PROJECT_ID invalid (${projectCheck.error ?? "unknown"}) — check project ID and team.`,
     };
   }
 
@@ -112,7 +151,9 @@ export async function resolveVercelConnection(
     teamId: cfg.teamId,
     envSyncOk,
     missingEnv,
-    message: "Ready to deploy via Vercel API.",
+    message: projectCheck.projectName
+      ? `Connected to Vercel project “${projectCheck.projectName}”.`
+      : "Ready to deploy via Vercel API.",
   };
 }
 

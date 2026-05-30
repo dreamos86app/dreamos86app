@@ -24,6 +24,11 @@ import {
   usePaddleCheckout,
   type PaddleCheckoutPlan,
 } from "@/components/billing/use-paddle-checkout";
+import {
+  resolvePlanAction,
+  type PlanActionTargetId,
+} from "@/lib/billing/plan-action-resolver";
+import { normalizePlanId } from "@/lib/billing/plans";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -439,8 +444,11 @@ interface PlanCardProps {
   notIncluded?: string[];
   highlight?: boolean;
   badge?: string;
-  cta: string;
+  /** @deprecated Prefer actionTarget — label is resolved from current plan rank. */
+  cta?: string;
+  actionTarget: PlanActionTargetId;
   currentPlanId?: string | null;
+  publicMode?: boolean;
   children?: React.ReactNode;
   ctaOnClick?: () => void;
   /** When set, CTA navigates here (e.g. public marketing signup). */
@@ -451,9 +459,19 @@ interface PlanCardProps {
 
 function PlanCard({
   id, name, price, annualPrice, annual, credits, actionCredits, actionCreditsBlurb, tagline, features,
-  notIncluded = [], highlight, badge, cta, currentPlanId, children, ctaOnClick, ctaHref, compact,
+  notIncluded = [], highlight, badge, cta: ctaProp, actionTarget, currentPlanId, publicMode = false,
+  children, ctaOnClick, ctaHref: ctaHrefProp, compact,
 }: PlanCardProps) {
-  const isCurrent = currentPlanId === id;
+  const normalizedCurrent = currentPlanId ? normalizePlanId(currentPlanId) : null;
+  const planAction = resolvePlanAction(normalizedCurrent, actionTarget, { publicMode });
+  const isCurrent = planAction.kind === "current";
+  const cta = ctaProp ?? planAction.label;
+  const ctaHref =
+    planAction.kind === "downgrade" && !publicMode
+      ? "/settings/billing"
+      : ctaHrefProp;
+  const effectiveOnClick =
+    !isCurrent && !planAction.disabled && planAction.kind !== "downgrade" ? ctaOnClick : undefined;
   const displayPrice = annual && annualPrice != null ? annualPrice : price;
   const originalPrice =
     annual && annualPrice != null ? Math.round(price! * 12) : null;
@@ -572,9 +590,9 @@ function PlanCard({
               </Link>
             );
           }
-          if (ctaOnClick) {
+          if (effectiveOnClick) {
             return (
-              <button type="button" className={ctaClass} onClick={ctaOnClick}>
+              <button type="button" className={ctaClass} onClick={effectiveOnClick}>
                 {cta}
                 <ArrowRight className="size-3.5" strokeWidth={2.5} />
               </button>
@@ -863,7 +881,7 @@ export function PricingView({ publicMode = false }: { publicMode?: boolean }) {
     if (!publicCheckoutEnabled) {
       return () =>
         toast.error(
-          "Public checkout is disabled while live billing is verified. Owner can test at /admin/billing/paddle/test-checkout.",
+          "Billing is being activated. Owner test checkout is available for admins.",
         );
     }
     return () => void startCheckout(plan, annual, { source: "pricing" });
@@ -956,7 +974,8 @@ export function PricingView({ publicMode = false }: { publicMode?: boolean }) {
             "Custom domains",
             "Team access",
           ]}
-          cta="Get started free"
+          actionTarget="free"
+          publicMode={publicMode}
           currentPlanId={publicMode ? null : planId}
           ctaHref={publicMode ? `/auth/signup?next=${signupNext}` : undefined}
         />
@@ -982,7 +1001,8 @@ export function PricingView({ publicMode = false }: { publicMode?: boolean }) {
             "Full source code export",
             "Email support",
           ]}
-          cta="Get Starter"
+          actionTarget="starter"
+          publicMode={publicMode}
           currentPlanId={publicMode ? null : planId}
           ctaHref={publicPaidCtaHref}
           ctaOnClick={paidCtaHandler("starter")}
@@ -1011,7 +1031,8 @@ export function PricingView({ publicMode = false }: { publicMode?: boolean }) {
             "Unlimited custom domains",
             "Priority support",
           ]}
-          cta="Get Pro"
+          actionTarget="pro"
+          publicMode={publicMode}
           currentPlanId={publicMode ? null : planId}
           ctaHref={publicPaidCtaHref}
           ctaOnClick={paidCtaHandler("pro")}
@@ -1046,7 +1067,8 @@ export function PricingView({ publicMode = false }: { publicMode?: boolean }) {
             "SSO / SAML",
             "Dedicated support",
           ]}
-          cta="Get Infinity"
+          actionTarget={infTier.id as PlanActionTargetId}
+          publicMode={publicMode}
           currentPlanId={publicMode ? null : planId}
           ctaHref={publicPaidCtaHref}
           ctaOnClick={

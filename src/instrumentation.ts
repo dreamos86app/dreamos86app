@@ -4,6 +4,7 @@
 import { logAppOriginBoot } from "@/lib/url/app-origin";
 import { logSupabaseEnvBoot } from "@/lib/supabase/validate-supabase-env";
 import { validateSupabaseProjectConsistency } from "@/lib/supabase/supabase-project-consistency";
+import { probeBuildJobEventsTable } from "@/lib/build/probe-build-job-events-table";
 
 export function register() {
   const consistency = validateSupabaseProjectConsistency();
@@ -31,5 +32,8 @@ export function register() {
     }
     logAppOriginBoot();
     logSupabaseEnvBoot();
+    void probeBuildJobEventsTable();
+  } else {
+    void probeBuildJobEventsTable();
   }
 }

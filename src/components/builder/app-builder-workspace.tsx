@@ -131,8 +131,8 @@ export function AppBuilderWorkspace({
   React.useEffect(() => {
     if (!projectId || !activePath) return;
     const file = files.find((f) => f.path === activePath);
-    if (localContent[activePath] !== undefined && localContent[activePath] !== "") return;
-    if (file?.content) {
+    if (localContent[activePath] !== undefined) return;
+    if (file?.content != null && file.content.length > 0) {
       setLocalContent((m) => ({ ...m, [activePath]: file.content }));
       return;
     }

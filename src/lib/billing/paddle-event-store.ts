@@ -110,7 +110,7 @@ export async function storePaddleWebhookEvent(
 ): Promise<{ stored: boolean; duplicate: boolean }> {
   const admin = createSupabaseAdmin();
   const { error } = await admin.from("billing_events").insert({
-    user_id: input.userId,
+    user_id: input.userId ?? null,
     stripe_event_id: input.paddleEventId,
     event_type: `paddle.${input.eventType}`,
     amount_usd: 0,

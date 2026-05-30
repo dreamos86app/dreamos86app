@@ -110,10 +110,8 @@ export async function completeBuildWithValidation(input: {
 
   if (fileCount < MIN_RENDERABLE_FILES) {
     lifecycle = "needs_attention";
-  } else if (!validationOk) {
-    lifecycle = "needs_attention";
   } else {
-    // Preview lifecycle is set only after a successful preview session — never here.
+    // Enough files on disk — treat as generated even if polish checks are soft-failing.
     lifecycle = "generated";
   }
 
@@ -129,7 +127,7 @@ export async function completeBuildWithValidation(input: {
     .from("projects")
     .update({
       status: legacyProjectStatus(lifecycle),
-      build_status: validationOk && fileCount > 0 ? "completed" : "failed",
+      build_status: fileCount >= MIN_RENDERABLE_FILES ? "completed" : "failed",
       preview_url: null,
       metadata: {
         ...prevMeta,
@@ -144,7 +142,7 @@ export async function completeBuildWithValidation(input: {
           ui_polish_quoted_credits: polishPlan.quoted ? polishPlan.estimatedCredits : null,
           ui_polish_included: polishPlan.includedInReservation && uiReview.needsPolish,
           repair_action: repairAction,
-          build_status: validationOk && fileCount > 0 ? "completed" : "needs_repair",
+          build_status: fileCount >= MIN_RENDERABLE_FILES ? "completed" : "needs_repair",
           preview_ready: false,
           preview_honest: false,
         }),

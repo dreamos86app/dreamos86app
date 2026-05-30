@@ -148,12 +148,23 @@ export async function processPaddleWebhookPayload(input: {
   }
 
   if (SUBSCRIPTION_EVENTS.has(eventType) || eventType.startsWith("subscription.")) {
-    await handlePaddleSubscriptionEvent({ eventType, data, paddleEventId: eventId });
-    processingStatus = "processed";
+    if (userId && mapped) {
+      try {
+        await handlePaddleSubscriptionEvent({ eventType, data, paddleEventId: eventId });
+        processingStatus = "processed";
+      } catch (handlerErr) {
+        processingStatus = "failed";
+        error =
+          handlerErr instanceof Error ? handlerErr.message.slice(0, 200) : "handler_failed";
+      }
+    } else {
+      processingStatus = userId ? "unknown_price_id" : "received_simulation_or_unlinked";
+      error = userId ? "unknown_price_id" : "missing_user_id";
+    }
     const { duplicate } = await storePaddleWebhookEvent({
       ...storeBase,
       processingStatus,
-      error: null,
+      error,
     });
     return { received: true, eventId, eventType, processingStatus, duplicate };
   }

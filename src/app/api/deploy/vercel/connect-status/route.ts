@@ -10,7 +10,18 @@ export async function GET() {
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("is_admin")
+    .eq("id", user.id)
+    .maybeSingle();
+
   const snapshot = await resolveVercelConnection(undefined, { validateToken: true });
+  const isAdmin = profile?.is_admin === true;
+  const showDetails =
+    isAdmin ||
+    snapshot.state !== "ready" ||
+    !snapshot.envSyncOk;
 
   return NextResponse.json({
     state: snapshot.state,
@@ -23,5 +34,6 @@ export async function GET() {
     envSyncOk: snapshot.envSyncOk,
     missingEnv: snapshot.missingEnv,
     message: snapshot.message,
+    showDetails,
   });
 }

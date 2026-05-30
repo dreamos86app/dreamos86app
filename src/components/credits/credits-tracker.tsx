@@ -47,9 +47,15 @@ function displayedCap(
   return creditBucketTotalCap(bucket, kind, planId ?? "free", Boolean(isConfirmed));
 }
 
-function progressPctFor(bucket: CanonicalCreditBucket, kind: "build" | "action", planId?: string, isConfirmed?: boolean): number {
-  const cap = Math.max(displayedCap(bucket, kind, planId, isConfirmed), 1);
-  return Math.min(100, (bucket.available / cap) * 100);
+function progressPctFor(
+  bucket: CanonicalCreditBucket,
+  kind: "build" | "action",
+  planId?: string,
+  isConfirmed?: boolean,
+): number {
+  const display = formatCreditBucketDisplay(bucket, kind, planId ?? "free", Boolean(isConfirmed));
+  const cap = Math.max(display.totalCap, 1);
+  return Math.min(100, (display.remainingTotal / cap) * 100);
 }
 
 function formatResetDate(iso: string | null): string | null {
@@ -130,6 +136,11 @@ function CreditRow({ kind, bucket, density, planId, isConfirmed }: CreditRowProp
         <p className="mt-1 text-[16px] font-bold tabular-nums leading-none text-foreground">
           {display.displayText}
         </p>
+        {display.secondaryText ? (
+          <p className="mt-0.5 text-[10px] font-medium text-violet-500 dark:text-violet-400">
+            {display.secondaryText}
+          </p>
+        ) : null}
         <div
           className={cn(
             "mt-1.5 h-1.5 w-full max-w-[148px] overflow-hidden rounded-full",
@@ -168,6 +179,8 @@ function CreditRow({ kind, bucket, density, planId, isConfirmed }: CreditRowProp
   const iconShell = isBuild
     ? "bg-violet-500/12 ring-violet-500/25"
     : "bg-cyan-500/12 ring-cyan-500/25";
+
+  const bucketDisplay = formatCreditBucketDisplay(bucket, kind, planId ?? "free", Boolean(isConfirmed));
 
   const rowContent = (
     <div className="flex items-start gap-2.5">
@@ -209,11 +222,13 @@ function CreditRow({ kind, bucket, density, planId, isConfirmed }: CreditRowProp
                 isPopover ? "text-[15px]" : "text-xl",
               )}
             >
-              {formatCreditAmount(bucket.available)}
+              {bucketDisplay.displayText}
             </p>
-            <p className={cn("mt-0.5 text-muted-foreground", isPopover ? "text-[9px]" : "text-[10px]")}>
-              of {formatCreditAmount(displayedCap(bucket, kind, planId, isConfirmed))} monthly
-            </p>
+            {bucketDisplay.secondaryText ? (
+              <p className={cn("mt-0.5 font-medium text-violet-500 dark:text-violet-400", isPopover ? "text-[9px]" : "text-[10px]")}>
+                {bucketDisplay.secondaryText}
+              </p>
+            ) : null}
           </div>
         </div>
         <div

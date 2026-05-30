@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import type { BillablePlanId } from "@/lib/billing/billable-plans";
 import { UPGRADE_POLICY_COPY } from "@/lib/billing/upgrade-policy";
 
 export type UpgradePreview = {
@@ -22,7 +23,7 @@ export type UpgradePreview = {
 type PlanUpgradeModalProps = {
   open: boolean;
   onClose: () => void;
-  targetPlanId: "starter" | "pro" | "infinity";
+  targetPlanId: BillablePlanId;
   interval?: "monthly" | "yearly";
   onSuccess?: () => void;
 };

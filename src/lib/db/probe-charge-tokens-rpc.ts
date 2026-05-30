@@ -101,7 +101,7 @@ function isPermissionDenied(message: string): boolean {
 }
 
 /** invalid_amount / insufficient / idempotent in message or JSON body = function executed. */
-function isExecutableResponse(message: string | undefined, data: unknown): boolean {
+export function isRpcProbeValidationOk(message: string | undefined, data: unknown): boolean {
   if (data && typeof data === "object") {
     const d = data as Record<string, unknown>;
     const err = typeof d.error === "string" ? d.error.toLowerCase() : "";
@@ -109,6 +109,10 @@ function isExecutableResponse(message: string | undefined, data: unknown): boole
       err === "invalid_amount" ||
       err === "insufficient_credits" ||
       err === "user_id_required" ||
+      err === "no_pending_referral" ||
+      err === "already_rewarded" ||
+      err === "already_completed" ||
+      err === "forbidden" ||
       d.idempotent === true ||
       d.charged === true ||
       d.ok === true ||
@@ -126,6 +130,9 @@ function isExecutableResponse(message: string | undefined, data: unknown): boole
     m.includes("insufficient") ||
     m.includes("idempotent") ||
     m.includes("user_id_required") ||
+    m.includes("no_pending_referral") ||
+    m.includes("already_rewarded") ||
+    m.includes("already_completed") ||
     m.includes("foreign key constraint") ||
     m.includes("violates foreign key")
   ) {
@@ -133,6 +140,9 @@ function isExecutableResponse(message: string | undefined, data: unknown): boole
   }
   return !isMissingFunctionError(message);
 }
+
+/** @deprecated use isRpcProbeValidationOk */
+const isExecutableResponse = isRpcProbeValidationOk;
 
 function normalizeSignatures(raw: RawSig[] | undefined): PgProcSignature[] {
   if (!Array.isArray(raw)) return [];

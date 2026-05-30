@@ -16,6 +16,8 @@ const billable = read("src/lib/billing/billable-plans.ts");
 const paddleBilling = read("src/lib/billing/paddle-billing.ts");
 const billingSettings = read("src/components/settings/billing-settings.tsx");
 const paddleApi = read("src/lib/billing/paddle-api.ts");
+const paddleCheckoutUrl = read("src/lib/billing/paddle-checkout-url.ts");
+const testCheckoutComponent = read("src/components/admin/admin-paddle-test-checkout.tsx");
 const checkout = read("src/app/api/billing/paddle/checkout/route.ts");
 const webhook = read("src/app/api/billing/paddle/webhook/route.ts");
 const webhooksAlias = read("src/app/api/webhooks/paddle/route.ts");
@@ -24,7 +26,7 @@ const changePlan = read("src/app/api/billing/paddle/change-plan/route.ts");
 const pricing = read("src/components/pricing/pricing-view.tsx");
 const paddleCheckoutHook = read("src/components/billing/use-paddle-checkout.ts");
 const upgradePolicy = read("src/lib/billing/upgrade-policy.ts");
-const adminPage = read("src/app/(app)/admin/billing/paddle/page.tsx");
+const adminPage = read("src/app/(app)/admin/(owner)/billing/paddle/page.tsx");
 const adminPanel = read("src/components/admin/admin-paddle-config-panel.tsx");
 const envExample = read(".env.example");
 const deployment = read("docs/DEPLOYMENT.md");
@@ -37,6 +39,10 @@ const webhookProcessor = read("src/lib/billing/paddle-webhook-processor.ts");
 const apiVerify = read("src/lib/billing/paddle-api-verify.ts");
 const billingStatus = read("src/app/api/billing/status/route.ts");
 const testCheckoutPage = read("src/app/(app)/admin/billing/paddle/test-checkout/page.tsx");
+const planActionResolver = read("src/lib/billing/plan-action-resolver.ts");
+const adminLayout = read("src/app/(app)/admin/layout.tsx");
+const ownerLayout = read("src/app/(app)/admin/(owner)/layout.tsx");
+const userMenu = read("src/components/layout/user-menu.tsx");
 const manualSql = read("scripts/manual-sql/infinity-tier-plan-ids.sql");
 const migration = read("supabase/migrations/20260529120000_infinity_tier_plan_ids.sql");
 
@@ -327,6 +333,70 @@ const suites = {
   "supabase-migration-manual-sql-safe": () => {
     if (!manualSql.includes("drop constraint if exists")) throw new Error("idempotent drop");
     if (!manualSql.includes("NOTIFY pgrst")) throw new Error("postgrest reload");
+  },
+  "plan-action-labels-by-rank": () => {
+    if (!planActionResolver.includes("Downgrade to")) throw new Error("downgrade label");
+    if (!planActionResolver.includes("Upgrade to")) throw new Error("upgrade label");
+    if (!planActionResolver.includes("Current plan")) throw new Error("current label");
+    if (!planActionResolver.includes("inf-7")) throw new Error("infinity vii target");
+  },
+  "pricing-buttons-downgrade-for-lower-plans": () => {
+    if (!pricing.includes("resolvePlanAction")) throw new Error("pricing resolver");
+    if (!pricing.includes("actionTarget")) throw new Error("actionTarget prop");
+    if (!pricing.includes("/settings/billing")) throw new Error("downgrade href billing");
+  },
+  "billing-buttons-downgrade-for-lower-plans": () => {
+    if (!billingSettings.includes("resolveBillablePlanAction")) throw new Error("billing resolver");
+    if (!billingSettings.includes("Downgrade to")) throw new Error("downgrade in billing");
+  },
+  "user-menu-upgrade-until-infinity-vii": () => {
+    if (!userMenu.includes("nextUpgradePlanId")) throw new Error("next plan");
+    if (!userMenu.includes("!atHighestPlan")) throw new Error("upgrade when not highest");
+  },
+  "no-upgrade-button-at-infinity-vii": () => {
+    if (!userMenu.includes("atHighestPlan")) throw new Error("highest check");
+    if (!userMenu.includes("Manage billing")) throw new Error("manage billing at top");
+  },
+  "infinity-tier-plan-actions-all-tiers": () => {
+    for (const n of ["inf-1", "inf-7", "infinity_vii"]) {
+      if (!planActionResolver.includes(n) && !planActionResolver.includes("infinity_vii")) {
+        throw new Error(`missing tier ref ${n}`);
+      }
+    }
+    if (!planActionResolver.includes("INFINITY_SUFFIX_TO_TARGET")) throw new Error("suffix map");
+  },
+  "paddle-owner-test-checkout-not-404": () => {
+    if (!testCheckoutPage.includes("AdminPaddleTestCheckout")) throw new Error("renders checkout");
+    if (!testCheckoutPage.includes("GateShell")) throw new Error("controlled gates not 404");
+    if (adminLayout.includes("isDreamosOwnerEmail")) throw new Error("admin layout must not blanket redirect");
+    if (!ownerLayout.includes("isDreamosOwnerEmail")) throw new Error("owner layout gate");
+  },
+  "paddle-owner-test-checkout-admin-only": () => {
+    if (!testCheckoutPage.includes("Access denied")) throw new Error("forbidden state");
+  },
+  "paddle-owner-test-checkout-disabled-state": () => {
+    if (!testCheckoutPage.includes("PADDLE_OWNER_TEST_CHECKOUT_ENABLED=true")) throw new Error("disabled copy");
+    if (!publicCheckout.includes('raw === "true"')) throw new Error("owner flag requires true");
+  },
+  "paddle-checkout-approved-domain": () => {
+    if (!paddleCheckoutUrl.includes("PADDLE_CHECKOUT_URL")) throw new Error("env var");
+    if (!paddleCheckoutUrl.includes("resolvePaddleTransactionCheckoutUrl")) throw new Error("resolver");
+    if (!paddleApi.includes("resolvePaddleTransactionCheckoutUrl")) throw new Error("api uses resolver");
+    if (paddleApi.includes("url: input.successUrl")) throw new Error("must not use successUrl for checkout.url");
+  },
+  "paddle-live-checkout-no-localhost-url": () => {
+    if (!paddleCheckoutUrl.includes("isDisallowedLiveCheckoutHost")) throw new Error("host blocklist");
+    if (!paddleCheckoutUrl.includes(".vercel.app")) throw new Error("block vercel preview");
+    if (!paddleCheckoutUrl.includes("PADDLE_LIVE_CHECKOUT_DOMAIN_ERROR")) throw new Error("setup error copy");
+    if (!paddleCheckoutUrl.includes('paddleEnvironment() === "production"')) throw new Error("production branch");
+    if (paddleApi.includes("getAppUrl()") && paddleApi.includes("checkout: { url: input.successUrl")) {
+      throw new Error("api still uses app url for checkout");
+    }
+  },
+  "paddle-checkout-default-url-supported": () => {
+    if (!paddleCheckoutUrl.includes('mode: "default"')) throw new Error("default mode");
+    if (!paddleApi.includes("if (checkoutUrlResolution.url)")) throw new Error("omit checkout when null");
+    if (!envExample.includes("PADDLE_CHECKOUT_URL")) throw new Error("env example");
   },
 };
 

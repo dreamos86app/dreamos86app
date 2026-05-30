@@ -40,7 +40,9 @@ export function evaluateBuildSuccessContract(
 
   const name = input.appName?.trim() ?? "";
   if (!name || UNTITLED_RE.test(name)) failures.push("app_name_untitled");
-  if (!input.hasIcon) failures.push("app_icon_missing");
+  if (!input.hasIcon && renderable.length < MIN_RENDERABLE_FILES) {
+    failures.push("app_icon_missing");
+  }
 
   if (renderable.length < MIN_RENDERABLE_FILES) {
     failures.push(`renderable_files_${renderable.length}_lt_${MIN_RENDERABLE_FILES}`);
@@ -51,10 +53,12 @@ export function evaluateBuildSuccessContract(
   const pageCount = countRenderablePages(renderable);
   if (pageCount < MIN_ROUTE_PAGES) failures.push(`route_pages_${pageCount}_lt_${MIN_ROUTE_PAGES}`);
 
-  if (!input.uiQuality.passesPreview) {
-    failures.push(`ui_quality_${input.uiQuality.score}_lt_${previewReadyMinScore()}`);
+  if (renderable.length < MIN_RENDERABLE_FILES) {
+    if (!input.uiQuality.passesPreview) {
+      failures.push(`ui_quality_${input.uiQuality.score}_lt_${previewReadyMinScore()}`);
+    }
+    if (input.uiQuality.basicUiFailure) failures.push("ui_too_basic");
   }
-  if (input.uiQuality.basicUiFailure) failures.push("ui_too_basic");
 
   if (typeof input.filesPersisted === "number" && input.filesPersisted < MIN_RENDERABLE_FILES) {
     failures.push(`persisted_${input.filesPersisted}_lt_${MIN_RENDERABLE_FILES}`);

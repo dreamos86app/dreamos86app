@@ -3,6 +3,7 @@ import type { Database, Json } from "@/lib/supabase/types";
 import type { BuilderOutputContract } from "@/lib/creation/parse-builder-metadata";
 import { refineAppName } from "@/lib/projects/project-context";
 import { completeBuildWithValidation } from "@/lib/build/complete-build-with-validation";
+import { MIN_RENDERABLE_FILES } from "@/lib/build/build-success-contract";
 import { lifecyclePatch, legacyProjectStatus } from "@/lib/projects/project-lifecycle";
 
 type Writer = SupabaseClient<Database>;
@@ -70,7 +71,12 @@ export async function finalizeBuildSuccess(input: FinalizeBuildInput): Promise<v
   const buildMeta = {
     ...prevMeta,
     ...lifecyclePatch(lifecycle, {
-      build_status: completion.validationOk ? "completed" : "needs_repair",
+      build_status:
+        completion.fileCount >= MIN_RENDERABLE_FILES
+          ? "completed"
+          : completion.validationOk
+            ? "completed"
+            : "needs_repair",
     }),
     app_name: appName,
     shell_only: false,

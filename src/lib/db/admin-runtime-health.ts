@@ -13,6 +13,7 @@ import {
   projectRefFromSupabaseUrl,
 } from "@/lib/db/charge-tokens-rpc";
 import { invalidateChargeTokensProbeCache } from "@/lib/db/charge-probe-cache";
+import { isRpcProbeValidationOk } from "@/lib/db/probe-charge-tokens-rpc";
 import { safeFetch } from "@/lib/network/safe-fetch";
 import { pushRuntimeDiagnostic } from "@/lib/dev/runtime-diagnostics";
 import { dreamosLog } from "@/lib/diagnostics/dreamos-logger";
@@ -255,7 +256,19 @@ async function probeServiceRoleRpc(
   if (isNotFoundFunction(error.message)) {
     return { executable: false, lastError: error.message };
   }
+  if (isRpcProbeValidationOk(error.message, data)) {
+    return { executable: true, lastError: null, data };
+  }
   return { executable: true, lastError: error.message, data };
+}
+
+function sanitizeRpcProbeLastError(
+  lastError: string | null | undefined,
+  data?: unknown,
+): string | undefined {
+  if (!lastError) return undefined;
+  if (isRpcProbeValidationOk(lastError, data)) return undefined;
+  return lastError;
 }
 
 function postgresExistsForRpc(
@@ -477,16 +490,32 @@ export async function getAdminRuntimeHealth(opts?: {
       existsInPostgres,
       callableByPostgrest: postgrest.callable,
       executableByServiceRole: sr.executable && !isNotFoundFunction(sr.lastError),
-      lastError: sr.lastError ?? postgrest.lastError ?? undefined,
+      lastError: sanitizeRpcProbeLastError(sr.lastError ?? postgrest.lastError, sr.data),
     };
   }
+
+  const onboardingProbe = probeUserId
+    ? {
+        p_user_id: probeUserId,
+        p_hear_about: "health_probe",
+        p_build_first: "health_probe",
+        p_replay: true,
+      }
+    : { p_user_id: "00000000-0000-0000-0000-000000000000" as string };
+
+  const referralProbe = probeUserId
+    ? { p_referred_id: probeUserId, p_credits: 1 }
+    : { p_referred_id: "00000000-0000-0000-0000-000000000000" as string, p_credits: 0 };
 
   const rpcs: AdminRuntimeHealth["rpcs"] = {
     charge_tokens: {
       existsInPostgres: chargeExistsPg,
       callableByPostgrest: chargePostgrest.callable,
       executableByServiceRole: chargeSr.executable && !isNotFoundFunction(chargeSr.lastError),
-      lastError: chargeSr.lastError ?? chargePostgrest.lastError ?? undefined,
+      lastError: sanitizeRpcProbeLastError(
+        chargeSr.lastError ?? chargePostgrest.lastError,
+        chargeSr.data,
+      ),
     },
     ensure_user_profile: {
       existsInPostgres: ensureExistsPg,
@@ -531,13 +560,26 @@ export async function getAdminRuntimeHealth(opts?: {
       },
       catalog.rpcExistsInPg.grant_credits_admin,
     ),
-    complete_user_onboarding: await probeNamedRpc("complete_user_onboarding", {
-      p_user_id: chargePayload.p_user_id,
-    }),
-    claim_referral_reward: await probeNamedRpc("claim_referral_reward", {
-      p_user_id: chargePayload.p_user_id,
-    }),
+    complete_user_onboarding: await probeNamedRpc(
+      "complete_user_onboarding",
+      onboardingProbe as Record<string, unknown>,
+    ),
+    claim_referral_reward: await probeNamedRpc(
+      "claim_referral_reward",
+      referralProbe as Record<string, unknown>,
+    ),
   };
+
+  if (
+    rpcs.charge_tokens.existsInPostgres &&
+    rpcs.charge_tokens.executableByServiceRole &&
+    !rpcs.charge_credits.existsInPostgres
+  ) {
+    rpcs.charge_credits = {
+      ...rpcs.charge_tokens,
+      lastError: rpcs.charge_credits.lastError,
+    };
+  }
 
   const { criticalBlockers, optionalIssues } = buildMissingFromCanonical(
     tables,

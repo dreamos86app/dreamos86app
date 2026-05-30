@@ -25,6 +25,12 @@ const creationWs = read("src/components/create/workspace/creation-workspace.tsx"
 const createPage = read("src/components/create/create-page-body.tsx");
 const composerText = read("src/lib/create/composer-text.ts");
 const builderGate = read("src/components/create/builder-project-gate.tsx");
+const userFacing = read("src/lib/workflow/user-facing-workflow-events.ts");
+const ephemeral = read("src/lib/workflow/workflow-ephemeral-steps.ts");
+const filePathUtil = read("src/lib/workflow/workflow-file-path.ts");
+const identity = read("src/lib/projects/app-identity-service.ts");
+const logoGen = read("src/lib/projects/app-logo-generation.ts");
+const buildWorkerTrace = read("src/lib/build/build-worker-trace.ts");
 
 const suites = {
   "workflow-event-schema": () => {
@@ -47,7 +53,7 @@ const suites = {
   },
   "workflow-natural-assistant-messages": () => {
     if (!jobEvents.includes("stream_category")) throw new Error("assistant stream_category metadata missing");
-    if (!jobEvents.includes("I'll build this based on your request")) throw new Error("natural opener missing");
+    if (!userFacing.includes("userFacingArchetypeLabel")) throw new Error("archetype opener helper");
   },
   "composer-enablement-credits-gate": () => {
     if (!composerText.includes("creditsConfirmed")) {
@@ -62,7 +68,7 @@ const suites = {
   },
   "workflow-assistant-messages-during-build": () => {
     if (!pipeline.includes("trackAssistant")) throw new Error("trackAssistant missing in pipeline");
-    if (!pipeline.includes("I understand what you're building")) throw new Error("mid-build assistant missing");
+    if (!pipeline.includes("userFacingArchetypeLabel")) throw new Error("archetype assistant opener");
     if (!jobEvents.includes("persistAssistantBuildMessage")) throw new Error("persistAssistantBuildMessage missing");
     if (!execute.includes("persistAssistantBuildMessage")) throw new Error("terminal assistant summary missing");
   },
@@ -120,6 +126,117 @@ const suites = {
   },
   "workflow-reduced-motion": () => {
     if (!streamUi.includes("useReducedMotion")) throw new Error("reduced motion hook missing");
+  },
+  "workflow-starts-alive-fast": () => {
+    if (!ephemeral.includes("buildEphemeralWorkflowEvents")) throw new Error("ephemeral builder missing");
+    if (!streamUi.includes("buildStartedAtMs")) throw new Error("stream needs buildStartedAtMs");
+    if (!immersive.includes("buildStartedAtRef")) throw new Error("immersive build start ref");
+  },
+  "workflow-active-step-updates": () => {
+    if (!streamUi.includes("workflow-active-step")) throw new Error("active step card");
+    if (!streamUi.includes("setInterval")) throw new Error("client tick for ephemeral");
+  },
+  "workflow-no-stuck-planning": () => {
+    if (immersive.includes('Planning your build…') && !immersive.includes('mode !== "build"'))
+      throw new Error("immersive still shows Planning your build for build mode");
+    if (!userFacing.includes("Mapping screens and data")) throw new Error("friendly planning copy");
+  },
+  "workflow-ephemeral-events-merge-with-server": () => {
+    if (!ephemeral.includes("mergeEphemeralWithServerEvents")) throw new Error("merge helper");
+  },
+  "workflow-chat-native-layout": () => {
+    if (!streamUi.includes("AssistantBubble")) throw new Error("assistant bubbles");
+    if (!streamUi.includes("data-testid=\"workflow-chat-assistant\"")) throw new Error("chat testid");
+  },
+  "workflow-no-giant-single-panel": () => {
+    if (streamUi.includes("max-h-") && streamUi.includes("overflow-y-auto"))
+      throw new Error("nested scroll in stream");
+  },
+  "workflow-no-nested-scroll-panel": () => {
+    suites["workflow-no-giant-single-panel"]();
+  },
+  "workflow-one-active-spinner": () => {
+    if (!coalesce.includes("applySingleActiveWorkflowStep")) throw new Error("single active");
+    if (!streamUi.includes("ev.stableKey !== active?.stableKey")) throw new Error("hide dup active row");
+  },
+  "workflow-no-duplicate-progress-spam": () => {
+    if (!coalesce.includes("seenTitle")) throw new Error("dedupe titles in coalesce");
+  },
+  "workflow-hides-internal-event-labels": () => {
+    if (!userFacing.includes("weak_output_detected")) throw new Error("internal key map");
+    if (!userFacing.includes("Premium UI repair")) throw new Error("repair pattern map");
+  },
+  "workflow-no-raw-snake-case": () => {
+    if (!userFacing.includes("SNAKE_CASE_RE")) throw new Error("snake case guard");
+  },
+  "workflow-no-quality-scores-to-users": () => {
+    if (!userFacing.includes("QUALITY_SCORE_RE")) throw new Error("score strip");
+    if (pipeline.includes("score ${uiQuality.score}")) throw new Error("pipeline still emits scores");
+  },
+  "workflow-file-cards-only-real-files": () => {
+    if (!filePathUtil.includes("isValidWorkflowFilePath")) throw new Error("path validator");
+    if (!streamUi.includes("isFileEvent")) throw new Error("isFileEvent guard");
+  },
+  "workflow-non-file-events-not-file-cards": () => {
+    if (!streamUi.includes("isValidWorkflowFilePath(ev.filePath)")) throw new Error("path check in UI");
+  },
+  "workflow-file-cards-line-counts": () => {
+    if (!streamUi.includes("addedLines")) throw new Error("line counts in UI");
+  },
+  "workflow-file-card-valid-path-required": () => {
+    suites["workflow-file-cards-only-real-files"]();
+  },
+  "workflow-file-card-no-fake-created-events": () => {
+    if (!filePathUtil.includes("FORBIDDEN_PATH_FRAGMENT")) throw new Error("forbidden fragments");
+    if (!buildWorkerTrace.includes("scaffold_fallback_applied")) throw new Error("trace stage exists");
+    if (
+      buildWorkerTrace.includes('input.stage === "scaffold_fallback_applied"') &&
+      buildWorkerTrace.match(/scaffold_fallback_applied[\s\S]*writing_file/)
+    ) {
+      throw new Error("scaffold must not map to writing_file");
+    }
+  },
+  "workflow-file-grouping": () => {
+    if (!streamUi.includes("groupFileEvents")) throw new Error("file grouping");
+  },
+  "icon-generation-build-only": () => {
+    if (!identity.includes("createAppIdentityForBuild")) throw new Error("identity service");
+    if (!pipeline.includes("createAppIdentityForBuild")) throw new Error("pipeline calls identity");
+  },
+  "icon-generation-not-in-discuss": () => {
+    if (!immersive.includes('mode === "build"')) throw new Error("build mode guard");
+  },
+  "icon-generation-action-credit-precheck": () => {
+    if (!identity.includes("assertActionCreditsAffordable")) throw new Error("precheck");
+    if (!identity.includes("chargeActionCredit")) throw new Error("charge");
+  },
+  "icon-generation-no-negative-action-credits": () => {
+    if (!identity.includes("!charge.ok")) throw new Error("charge failure path");
+  },
+  "icon-generation-saves-project-icon": () => {
+    if (!identity.includes("persistAppIdentity")) throw new Error("persist identity");
+    if (!logoGen.includes("uploadLogoDerivatives")) throw new Error("upload logos");
+  },
+  "icon-generation-no-repeat-on-repair": () => {
+    if (!identity.includes("logo_generation_status === \"generated\"")) throw new Error("reuse generated icon");
+  },
+  "icon-generation-cheapest-route": () => {
+    if (!logoGen.includes("routeImageProvider")) throw new Error("cheap route");
+    if (!logoGen.includes("generateBrandIconFromSvg")) throw new Error("brand svg upload");
+    if (!logoGen.includes("buildFallbackIconSvg")) throw new Error("svg fallback");
+    if (!identity.includes("generateBrandIconFromSvg")) throw new Error("identity uses brand svg");
+  },
+  "project-icon-updates-ui": () => {
+    if (!identity.includes("icon_url")) throw new Error("icon_url patch");
+  },
+  "discuss-mode-no-build-side-effects": () => {
+    if (!immersive.includes('mode === "build"')) throw new Error("mode checks");
+  },
+  "plan-first-no-icon-before-confirm": () => {
+    if (!immersive.includes("blueprintApproved")) throw new Error("plan first gate");
+  },
+  "build-mode-generates-icon": () => {
+    if (!pipeline.includes("skipLogo: false")) throw new Error("logo enabled on build");
   },
 };
 

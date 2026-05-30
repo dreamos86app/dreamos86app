@@ -2,7 +2,9 @@ import sharp from "sharp";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import { ensurePublicBucket } from "@/lib/supabase/ensure-storage-bucket";
 import { routeImageProvider } from "@/lib/ai/image-provider-routing";
+import { isProviderConfigured } from "@/lib/ai/provider-availability";
 import { generateAppIconSvg } from "@/lib/creation/app-icon-svg";
+import { isDreamOSMediaProviderDisabled } from "@/lib/media/dreamos-media-router";
 
 const LOGO_BUCKET = "project-icons";
 const MIN_LOGO_PX = 720;
@@ -44,6 +46,12 @@ export function buildLogoPrompt(input: {
     "No readable text, no watermark, high contrast, minimal but memorable.",
     "Clean background suitable for app cards and favicons.",
   ].join(" ");
+}
+
+/** True when OpenAI image generation can run (key present, not kill-switched). */
+export function isAiLogoGenerationAvailable(): boolean {
+  if (isDreamOSMediaProviderDisabled("logo")) return false;
+  return isProviderConfigured("openai");
 }
 
 async function generateOpenAiLogo(prompt: string): Promise<{
@@ -155,6 +163,41 @@ async function uploadLogoDerivatives(
   };
 }
 
+/**
+ * Polished brand icon from deterministic SVG → PNG (no OpenAI, no Action Credits).
+ */
+export async function generateBrandIconFromSvg(input: {
+  projectId: string;
+  operationId: string;
+  appName: string;
+  category?: string;
+}): Promise<LogoGenerationResult> {
+  try {
+    const svg = generateAppIconSvg(input.appName, input.category);
+    const buffer = await sharp(Buffer.from(svg)).resize(1024, 1024).png().toBuffer();
+    const validated = await validateLogoBuffer(buffer);
+    if (!validated.ok) {
+      return { ok: false, error: validated.error, providerCostUsd: 0 };
+    }
+    const urls = await uploadLogoDerivatives(input.projectId, input.operationId, buffer);
+    return {
+      ok: true,
+      urls,
+      provider: "dreamos",
+      modelId: "brand_svg_v1",
+      providerCostUsd: 0,
+      width: validated.width,
+      height: validated.height,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "brand_svg_failed",
+      providerCostUsd: 0,
+    };
+  }
+}
+
 export async function generateAppLogo(input: {
   projectId: string;
   operationId: string;
@@ -163,6 +206,16 @@ export async function generateAppLogo(input: {
   category?: string;
 }): Promise<LogoGenerationResult> {
   const route = routeImageProvider("image_simple");
+
+  if (!isAiLogoGenerationAvailable()) {
+    return generateBrandIconFromSvg({
+      projectId: input.projectId,
+      operationId: input.operationId,
+      appName: input.appName,
+      category: input.category,
+    });
+  }
+
   let providerCostUsd = 0;
 
   try {
@@ -172,7 +225,13 @@ export async function generateAppLogo(input: {
 
     const validated = await validateLogoBuffer(generated.buffer);
     if (!validated.ok) {
-      return { ok: false, error: validated.error, providerCostUsd: 0 };
+      const fallback = await generateBrandIconFromSvg({
+        projectId: input.projectId,
+        operationId: input.operationId,
+        appName: input.appName,
+        category: input.category,
+      });
+      return fallback.ok ? fallback : { ok: false, error: validated.error, providerCostUsd: 0 };
     }
 
     const urls = await uploadLogoDerivatives(input.projectId, input.operationId, generated.buffer);
@@ -185,12 +244,13 @@ export async function generateAppLogo(input: {
       width: validated.width,
       height: validated.height,
     };
-  } catch (err) {
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : "logo_generation_failed",
-      providerCostUsd: 0,
-    };
+  } catch {
+    return generateBrandIconFromSvg({
+      projectId: input.projectId,
+      operationId: input.operationId,
+      appName: input.appName,
+      category: input.category,
+    });
   }
 }
 

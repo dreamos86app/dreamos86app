@@ -1,6 +1,9 @@
 import { create } from "zustand";
 import type { Message } from "@/lib/supabase/types";
 
+/** Stable empty array for Zustand selectors — never use `?? []` inline. */
+export const EMPTY_CHAT_MESSAGES: Message[] = [];
+
 type ChatConversationState = {
   messagesByConversationId: Record<string, Message[]>;
   loadingByConversationId: Record<string, boolean>;

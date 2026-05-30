@@ -1,33 +1,33 @@
 {
-  "operationId": "49b04be4-480c-4db2-a3d4-87a95e1a4a62",
-  "executionInstanceId": "49b04be4-480c-4db2-a3d4-87a95e1a4a62:6d950ce8-a95f-47aa-8967-77d3470f3bb5",
-  "projectId": "e60c20db-47f0-414d-bd08-da6108a33900",
-  "ownerId": "3c08502e-9771-413e-b9bd-4446b179c962",
+  "operationId": "0f0f4474-c093-4a82-93c7-caa7497a4380",
+  "executionInstanceId": "0f0f4474-c093-4a82-93c7-caa7497a4380:ee03c64a-f240-4685-9c14-5dd01b394f04",
+  "projectId": "209e29e9-5c84-4d27-992a-75994c166940",
+  "ownerId": "d026ba49-4de5-489d-ace7-12ec78d98e70",
   "before": {
-    "generatedCount": 16,
+    "generatedCount": 11,
     "routeCount": 5,
-    "componentCount": 7,
-    "totalBytes": 15642,
+    "componentCount": 3,
+    "totalBytes": 8013,
     "samplePaths": [
-      "package.json",
+      "app/layout.tsx",
+      "app/login/page.tsx",
       "app/globals.css",
+      "app/page.tsx",
+      "app/dashboard/page.tsx",
+      "app/records/page.tsx",
+      "app/settings/page.tsx",
       "lib/mock-data.ts",
-      "components/AppShell.tsx",
       "components/MetricCard.tsx",
-      "components/InventoryTable.tsx",
-      "components/LowStockAlerts.tsx",
-      "components/SupplierList.tsx",
-      "components/ExpiryTimeline.tsx",
-      "components/CostInsights.tsx"
+      "components/PageHeader.tsx"
     ]
   },
   "upsert": {
     "ok": true,
-    "rowCount": 16
+    "rowCount": 11
   },
   "after": {
-    "serviceRoleCount": 16,
-    "generatedSourceCount": 16,
-    "visibleCount": 16
+    "serviceRoleCount": 11,
+    "generatedSourceCount": 11,
+    "visibleCount": 11
   }
 }

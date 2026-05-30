@@ -1,6 +1,10 @@
 import type { BuildFile } from "@/lib/build/generated-file-utils";
 import { normalizeBuildFilePath } from "@/lib/build/generated-file-utils";
 import type { AppArchetypeId } from "@/lib/build/app-archetype-classifier";
+import {
+  dreamOSBrandingLayoutFooterJsx,
+  dreamOSLoginPageScaffold,
+} from "@/lib/branding/generated-app-branding";
 
 /** Minimum usable SaaS / CRM / dashboard scaffold when model output is weak. */
 export function genericSaaSScaffoldFiles(archetypeId: AppArchetypeId, appName: string): BuildFile[] {
@@ -47,12 +51,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </nav>
           </div>
         </header>
-        <main className="mx-auto max-w-6xl px-4 py-6">{children}</main>
+        <main className="mx-auto max-w-6xl px-4 py-6">{children}</main>${dreamOSBrandingLayoutFooterJsx()}
       </body>
     </html>
   );
 }
 `,
+    },
+    {
+      path: "app/login/page.tsx",
+      content: dreamOSLoginPageScaffold(name),
     },
     {
       path: "app/globals.css",

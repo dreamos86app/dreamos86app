@@ -72,7 +72,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Owner-only test checkout" }, { status: 403 });
     }
     if (!paddleOwnerTestCheckoutEnabled()) {
-      return NextResponse.json({ error: "Owner test checkout is disabled" }, { status: 403 });
+      return NextResponse.json(
+        {
+          error:
+            "Owner test checkout is disabled. Set PADDLE_OWNER_TEST_CHECKOUT_ENABLED=true and restart or redeploy.",
+        },
+        { status: 403 },
+      );
     }
   } else if (!paddlePublicCheckoutEnabled() && !isOwner) {
     return NextResponse.json(
@@ -127,6 +133,8 @@ export async function POST(request: Request) {
   return NextResponse.json({
     url: result.checkoutUrl,
     transactionId: result.transactionId,
+    paddleCheckoutUrlSent: result.paddleCheckoutUrlSent,
+    paddleCheckoutUrlMode: result.paddleCheckoutUrlMode,
     priceId,
     priceIdMasked: priceId.length > 8 ? `…${priceId.slice(-4)}` : priceId,
     expectedAmountUsd: tier.amountUsd,

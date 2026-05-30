@@ -8,6 +8,9 @@ export type { CanonicalCreditBucket, CanonicalCreditsPayload };
 /** Data older than this is refreshed on explicit triggers (popover open, etc.). */
 export const CREDITS_STALE_MS = 90_000;
 
+/** Minimum time to show loading state so balances do not flash stale numbers. */
+export const CREDITS_MIN_LOADING_MS = 450;
+
 /** Optional background refresh — only when tab is visible and data is very stale. */
 export const CREDITS_BACKGROUND_STALE_MS = 120_000;
 
@@ -184,6 +187,7 @@ export const useCreditsStore = create<CreditsState>()((set, get) => ({
       return inFlightRequest;
     }
 
+    const loadStartedAt = Date.now();
     set({ loading: true, error: null });
 
     inFlightRequest = (async () => {
@@ -211,12 +215,20 @@ export const useCreditsStore = create<CreditsState>()((set, get) => ({
           planId: normalizePlanId(data.plan_id ?? "free") as CanonicalCreditsPayload["planId"],
         };
 
+        const elapsed = Date.now() - loadStartedAt;
+        const waitMs = Math.max(0, CREDITS_MIN_LOADING_MS - elapsed);
+        if (waitMs > 0) {
+          await new Promise((r) => setTimeout(r, waitMs));
+        }
         get().applyCanonical(payload);
         dispatchCreditUpdated(payload);
         logCreditSync(reason, "fetched ok");
         return payload;
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Credit sync failed";
+        const elapsed = Date.now() - loadStartedAt;
+        const waitMs = Math.max(0, CREDITS_MIN_LOADING_MS - elapsed);
+        if (waitMs > 0) await new Promise((r) => setTimeout(r, waitMs));
         set({ loading: false, error: msg });
         logCreditSync(reason, `error — ${msg}`);
         return null;

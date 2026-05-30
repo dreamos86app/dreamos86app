@@ -21,6 +21,10 @@ import {
   missingPaddleEnvVars,
   paddleEnvironment,
 } from "@/lib/billing/paddle-billing";
+import {
+  localDevProductionPaddleWarning,
+  resolvePaddleTransactionCheckoutUrl,
+} from "@/lib/billing/paddle-checkout-url";
 
 export type PaddlePriceRowStatus = {
   plan: BillablePlanId;
@@ -70,6 +74,14 @@ export type PaddleAdminConfigStatus = {
   publicCheckoutEnabled: boolean;
   ownerTestCheckoutEnabled: boolean;
   liveModeWarning: string | null;
+  checkoutUrl: {
+    mode: "explicit" | "default";
+    url: string | null;
+    displayLabel: string;
+    envConfigured: boolean;
+    setupError: string | null;
+    localDevLiveWarning: string | null;
+  };
   priceRows: PaddlePriceRowStatus[];
   vercelEnvChecklist: string[];
   paddleCheckoutRecommendations: string[];
@@ -120,11 +132,14 @@ export function buildPaddleAdminConfigStatus(
     }
   }
 
+  const checkoutUrlResolved = resolvePaddleTransactionCheckoutUrl();
+
   const vercelEnvChecklist = [
     "PADDLE_ENVIRONMENT=production",
     "PADDLE_API_KEY=",
     "PADDLE_WEBHOOK_SECRET=",
     "NEXT_PUBLIC_PADDLE_CLIENT_TOKEN=",
+    "PADDLE_CHECKOUT_URL=https://dreamos86.com",
     "PADDLE_PUBLIC_CHECKOUT_ENABLED=false",
     ...PADDLE_CATALOG_ENV_KEYS.filter(
       (k) =>
@@ -166,6 +181,23 @@ export function buildPaddleAdminConfigStatus(
       paddleEnvironment() === "production"
         ? "Production Paddle — live charges apply on checkout."
         : null,
+    checkoutUrl: checkoutUrlResolved.ok
+      ? {
+          mode: checkoutUrlResolved.mode,
+          url: checkoutUrlResolved.url,
+          displayLabel: checkoutUrlResolved.displayLabel,
+          envConfigured: checkoutUrlResolved.envConfigured,
+          setupError: null,
+          localDevLiveWarning: localDevProductionPaddleWarning(),
+        }
+      : {
+          mode: "default",
+          url: null,
+          displayLabel: "—",
+          envConfigured: Boolean(process.env.PADDLE_CHECKOUT_URL?.trim()),
+          setupError: checkoutUrlResolved.error,
+          localDevLiveWarning: localDevProductionPaddleWarning(),
+        },
     priceRows,
     vercelEnvChecklist,
     paddleCheckoutRecommendations: [

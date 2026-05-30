@@ -79,6 +79,10 @@ import {
   uiPlanPrompt,
 } from "@/lib/build/stage-prompts";
 import { computeFileLineMeta, type FileLineMeta } from "@/lib/build/file-line-counts";
+import {
+  userFacingArchetypeLabel,
+  userFacingRepairPassLabel,
+} from "@/lib/workflow/user-facing-workflow-events";
 
 export type WorkflowEventType =
   | "thinking"
@@ -387,11 +391,7 @@ export async function runStagedBuildPipeline(input: {
     `Complexity ${effectiveComplexity}/10`,
     firstPassScope ? `First pass (${firstPassScope.tier})` : scope.coreV1Only ? "Core V1 first" : undefined,
   );
-  trackAssistant(
-    events,
-    `I understand what you're building — I'll map the core screens and data model next.`,
-    emit,
-  );
+  trackAssistant(events, userFacingArchetypeLabel(archetypeEarly.label), emit);
 
   const scopeNote = firstPassScope
     ? firstPassScope.scopeNote
@@ -491,35 +491,30 @@ export async function runStagedBuildPipeline(input: {
   };
 
   track(events, "identity", "Creating app identity");
-  let identityResult: AppIdentityResult;
-  if (knownArchetypeFastPath) {
-    identityResult = identityFallback;
-    if (input.buildTrace) traceBuildWorkerStage(input.buildTrace, "identity_completed");
-  } else {
-    if (input.buildTrace) traceBuildWorkerStage(input.buildTrace, "identity_started");
-    const identityTimed = await withTimeout(
-      createAppIdentityForBuild({
-        writer: input.writer,
-        userId: input.userId,
-        userEmail: input.userEmail,
-        projectId: input.projectId,
-        buildOperationId: input.operationId,
-        buildIntent: executionPrompt,
-        planSummary: planParsed?.summary ?? planJson.slice(0, 800),
-        categoryHint: planParsed?.entities?.[0] ? String(planParsed.entities[0]) : undefined,
-        userSelectedModelId: input.userSelectedModelId,
-        onProgress: (step) => track(events, "identity", step),
-      }),
-      PROVIDER_TIMEOUT_MS.app_identity ?? 20_000,
-      "app_identity",
+  if (input.buildTrace) traceBuildWorkerStage(input.buildTrace, "identity_started");
+  const identityTimed = await withTimeout(
+    createAppIdentityForBuild({
+      writer: input.writer,
+      userId: input.userId,
+      userEmail: input.userEmail,
+      projectId: input.projectId,
+      buildOperationId: input.operationId,
+      buildIntent: executionPrompt,
+      planSummary: planParsed?.summary ?? planJson.slice(0, 800),
+      categoryHint: planParsed?.entities?.[0] ? String(planParsed.entities[0]) : undefined,
+      userSelectedModelId: input.userSelectedModelId,
+      onProgress: (step) => track(events, "identity", step),
+      skipLogo: false,
+    }),
+    PROVIDER_TIMEOUT_MS.app_identity ?? 45_000,
+    "app_identity",
+  );
+  const identityResult = identityTimed.ok ? identityTimed.value : identityFallback;
+  if (input.buildTrace) {
+    traceBuildWorkerStage(
+      input.buildTrace,
+      identityTimed.ok ? "identity_completed" : "identity_failed",
     );
-    identityResult = identityTimed.ok ? identityTimed.value : identityFallback;
-    if (input.buildTrace) {
-      traceBuildWorkerStage(
-        input.buildTrace,
-        identityTimed.ok ? "identity_completed" : "identity_failed",
-      );
-    }
   }
 
   const appName = identityResult.appName;
@@ -844,13 +839,8 @@ export async function runStagedBuildPipeline(input: {
 
   let scaffoldFallback = applyArchetypeScaffoldFallback(archetype.id, allFiles, appName);
   if (scaffoldFallback.usedFallback) {
-    track(events, "validating", "Strengthening the app structure…", "weak_output_detected");
-    track(
-      events,
-      "writing",
-      "Adding the required pages…",
-      `scaffold_fallback_used:${scaffoldFallback.afterCount}`,
-    );
+    track(events, "validating", "Strengthening the app structure…");
+    track(events, "writing", "Adding the required app structure");
     allFiles = scaffoldFallback.files;
     if (process.env.NODE_ENV !== "production") {
       console.info("[build] scaffold_fallback_used", {
@@ -924,10 +914,7 @@ export async function runStagedBuildPipeline(input: {
     repairAttempts < 3 &&
     accumulatedCost < FULL_BUILD_CAP_USD
   ) {
-    const repairLabel = uiQuality.basicUiFailure
-      ? `Premium UI repair ${repairAttempts + 1} (score ${uiQuality.score}/${previewReadyMinScore()})`
-      : `Repair pass ${repairAttempts + 1}`;
-    track(events, "repairing", repairLabel);
+    track(events, "repairing", userFacingRepairPassLabel(repairAttempts));
     const repairPrompt = uiQuality.basicUiFailure || uiQuality.score < previewReadyMinScore()
       ? buildPremiumUiRepairPrompt({
           designBrief,

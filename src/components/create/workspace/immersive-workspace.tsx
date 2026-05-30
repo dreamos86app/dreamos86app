@@ -65,6 +65,8 @@ import {
   type WorkflowRunStatus,
 } from "@/lib/build/workflow-status-guards";
 import { BuildRunSummaryCard } from "@/components/create/workspace/build-run-summary";
+import { classifyAppArchetype } from "@/lib/build/app-archetype-classifier";
+import { userFacingArchetypeLabel } from "@/lib/workflow/user-facing-workflow-events";
 import {
   userFacingPartialBuildStartMessage,
 } from "@/lib/billing/partial-build-credits";
@@ -234,11 +236,11 @@ function MessageBubble({
         creditsUsed={creditsUsed}
         messageTextForCopy={text || undefined}
       >
-        {!text && streaming ? (
+        {!text && streaming && mode !== "build" ? (
           <div className="rounded-xl bg-surface/80 px-3 py-2.5 text-[13px] text-muted-foreground ring-1 ring-border/60">
             <span className="inline-flex items-center gap-1.5">
               <span className="size-1.5 animate-pulse rounded-full bg-accent" />
-              Planning your build…
+              Working on your request…
             </span>
           </div>
         ) : useCards && (buildPlan || buildMeta || streaming) ? (
@@ -599,6 +601,7 @@ export function ImmersiveWorkspace({
   const [queuedPrompts, setQueuedPrompts] = React.useState<PromptQueueItem[]>([]);
   const handoffProjectKeyRef = React.useRef<string | null>(null);
   const [buildStarting, setBuildStarting] = React.useState(false);
+  const buildStartedAtRef = React.useRef<number | null>(null);
   const [preflightEstimate, setPreflightEstimate] = React.useState<{
     credits: number;
     creditsMax: number;
@@ -708,8 +711,10 @@ export function ImmersiveWorkspace({
                 ? (proj.metadata as Record<string, unknown>)
                 : {};
             creditsRefundedFlag = meta.credits_refunded === true;
+            const fileCountForRepair = projectFiles.length;
             buildNeedsRepair =
-              proj?.build_status === "needs_repair" || creditsRefundedFlag;
+              (proj?.build_status === "needs_repair" || creditsRefundedFlag) &&
+              fileCountForRepair < 4;
           }
         }
 
@@ -790,6 +795,7 @@ export function ImmersiveWorkspace({
         terminal,
         projectFileCount: fileCountHint,
       });
+      const previewReady = facts.hasPreviewSession || fileCountHint >= 4;
       const resolved = resolveBuildRunSummary({
         facts,
         appName: project?.name ?? undefined,
@@ -799,30 +805,49 @@ export function ImmersiveWorkspace({
             ? terminal.latest.metadata.credits_used
             : undefined,
         errorDetail: terminal.error ?? terminal.latest?.detail ?? undefined,
-        previewReady: facts.hasPreviewSession || fileCountHint > 0,
+        previewReady,
       });
+      const summary =
+        previewReady &&
+        facts.repairAttemptCount === 0 &&
+        resolved.variant === "failed" &&
+        facts.fileCount >= 4
+          ? {
+              ...resolved,
+              variant: "completed" as const,
+              status: "completed" as const,
+              headline: "Preview ready",
+              bodyLines: resolved.bodyLines.filter(
+                (line) =>
+                  !/repair pass|couldn't start|credits were returned/i.test(line),
+              ),
+              showRepairActions: false,
+              showRefundLine: false,
+              showPreviewActions: true,
+            }
+          : resolved;
       setBuildRunSummary({
-        variant: resolved.variant,
-        status: resolved.status,
-        headline: resolved.headline,
-        bodyLines: resolved.bodyLines,
+        variant: summary.variant,
+        status: summary.status,
+        headline: summary.headline,
+        bodyLines: summary.bodyLines,
         creditsUsed:
           typeof terminal.latest?.metadata?.credits_used === "number"
             ? terminal.latest.metadata.credits_used
             : undefined,
         remainingSummary: terminal.latest?.detail ?? undefined,
         errorMessage: terminal.error ?? terminal.latest?.detail ?? undefined,
-        refunded: resolved.showRefundLine,
-        showRefundLine: resolved.showRefundLine,
-        showRepairActions: resolved.showRepairActions,
-        showPreviewActions: resolved.showPreviewActions,
+        refunded: summary.showRefundLine,
+        showRefundLine: summary.showRefundLine,
+        showRepairActions: summary.showRepairActions,
+        showPreviewActions: summary.showPreviewActions,
       });
       setSubmitStatusLabel(
-        resolved.status === "partial_credit_stop"
+        summary.status === "partial_credit_stop"
           ? "Partial save — add credits to continue"
-          : resolved.status === "completed"
+          : summary.status === "completed"
             ? "Done"
-            : resolved.headline,
+            : summary.headline,
       );
     },
     [project?.name],
@@ -1501,6 +1526,7 @@ export function ImmersiveWorkspace({
 
     submitInFlightRef.current = true;
     setBuildStarting(true);
+    buildStartedAtRef.current = Date.now();
     const draft = text;
     setLastSubmitAt(Date.now());
     setSubmitBlocker(null);
@@ -1970,6 +1996,8 @@ export function ImmersiveWorkspace({
     !pipelineBusyForQueue &&
     !buildJobActive;
   const queueReady = buildJobActive || followUpQueueEligible;
+  const composerReadyToSend = composerHasText || composerDomHasText;
+  const showQueueAffordance = queueReady && !composerReadyToSend;
   const filesReady = hasGeneratedFiles;
   const importedReady = isImportedProjectReady({
     metadata: effectiveProject?.metadata,
@@ -2471,7 +2499,8 @@ export function ImmersiveWorkspace({
               </AnimatePresence>
 
               {isBusy &&
-                (messages[messages.length - 1]?.role === "user" || pendingUserBubble) && (
+                (messages[messages.length - 1]?.role === "user" || pendingUserBubble) &&
+                !(mode === "build" && (buildJobActive || buildStarting)) && (
                 <MessageBubble
                   message={{ id: "pending", role: "assistant", parts: [{ type: "text", text: "" }] } satisfies UIMessage}
                   userName="DreamOS86"
@@ -2483,15 +2512,24 @@ export function ImmersiveWorkspace({
               {(buildJobActive || buildStarting) &&
                 (pendingUserBubble || messages.length > 0) &&
                 mode === "build" && (
-                <BuildLiveProgress progress={buildJobProgress} className="mt-1" />
+                <BuildLiveProgress
+                  progress={buildJobProgress}
+                  className="mt-1"
+                  buildStartedAtMs={buildStartedAtRef.current ?? undefined}
+                  openerText={userFacingArchetypeLabel(
+                    classifyAppArchetype(
+                      pendingUserBubble ??
+                        messageText(
+                          [...messages].reverse().find((m) => m.role === "user") ?? {
+                            id: "",
+                            role: "user",
+                            parts: [{ type: "text", text: "" }],
+                          },
+                        ),
+                    ).label,
+                  )}
+                />
               )}
-              {buildStarting && !buildJobProgress && mode === "build" && (
-                <div className="mx-2 mt-1 rounded-lg bg-accent/[0.08] px-2.5 py-2 ring-1 ring-accent/30">
-                  <p className="text-[11.5px] font-semibold text-foreground">Starting build…</p>
-                  <p className="text-[10.5px] text-muted-foreground">Preparing your request</p>
-                </div>
-              )}
-
               {buildRunSummary && !buildJobActive && (
                 <BuildRunSummaryCard
                   variant={buildRunSummary.variant}
@@ -2833,12 +2871,12 @@ export function ImmersiveWorkspace({
                           : "bg-accent text-white hover:bg-accent/90"),
                   )}
                 >
-                  {queueReady ? (
+                  {showQueueAffordance ? (
                     <Loader2 className="size-3.5 animate-spin" />
                   ) : (
                     <ArrowUp className="size-3.5" strokeWidth={2.25} />
                   )}
-                  {queueReady
+                  {showQueueAffordance
                     ? queueCount > 0
                       ? `Queue (${queueCount})`
                       : "Queue"

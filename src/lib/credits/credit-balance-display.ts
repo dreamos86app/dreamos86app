@@ -3,18 +3,25 @@ import { formatCreditAmount } from "@/lib/credits/credit-summary";
 import { monthlyTokensForPlan, normalizePlanId } from "@/lib/billing/plans";
 import { monthlyActionCreditsForPlan } from "@/lib/action-credits/action-credit-allowances";
 
-export type CreditBucketDisplay = {
-  remaining: number;
-  monthlyAllowance: number;
-  bonusOrTopUp: number;
+/** Canonical credit display model — use everywhere (popover, billing, admin). */
+export type CreditBucketDisplayModel = {
+  remainingTotal: number;
+  totalCap: number;
+  planAllowance: number;
+  bonusAmount: number;
+  hasBonus: boolean;
+  bonusLabel: string | null;
   displayText: string;
   secondaryText: string | null;
 };
 
+/** @deprecated use CreditBucketDisplayModel */
+export type CreditBucketDisplay = CreditBucketDisplayModel;
+
 export type CreditBalanceDisplay = {
   plan: string;
-  build: CreditBucketDisplay;
-  action: CreditBucketDisplay;
+  build: CreditBucketDisplayModel;
+  action: CreditBucketDisplayModel;
   resetAt: string | null;
 };
 
@@ -23,54 +30,66 @@ function planMonthlyAllowance(kind: "build" | "action", planId: string): number 
   return kind === "build" ? monthlyTokensForPlan(id) : monthlyActionCreditsForPlan(id);
 }
 
-/** Spendable cap = plan allowance + explicit bonus (e.g. free 30 + grant 5 → 35). */
+function resolveBonusAmount(
+  bucket: CanonicalCreditBucket,
+  planAllowance: number,
+  isConfirmed: boolean,
+): number {
+  const explicit = Math.max(bucket.bonusActive, 0);
+  if (explicit > 0) return explicit;
+  if (!isConfirmed) return 0;
+  const overflow = Math.max(0, bucket.available - planAllowance);
+  return overflow;
+}
+
+/** Total spendable cap = plan allowance + bonus (denominator for tracker). */
 export function creditBucketTotalCap(
   bucket: CanonicalCreditBucket,
   kind: "build" | "action",
   planId: string,
   isConfirmed: boolean,
 ): number {
-  const monthlyAllowance = Math.max(
+  const planAllowance = Math.max(
     isConfirmed && bucket.planAllowance > 0
       ? bucket.planAllowance
       : planMonthlyAllowance(kind, planId),
     0,
   );
-  const explicitBonus = Math.max(bucket.bonusActive, 0);
-  const overflowBonus = Math.max(0, bucket.available - monthlyAllowance);
-  const bonusOrTopUp = explicitBonus > 0 ? explicitBonus : overflowBonus;
-  return Math.max(monthlyAllowance + bonusOrTopUp, bucket.available);
+  const bonusAmount = resolveBonusAmount(bucket, planAllowance, isConfirmed);
+  return Math.max(planAllowance + bonusAmount, bucket.available, 0);
 }
 
 /**
- * Canonical remaining / cap display (e.g. 35/35 when plan is 30 + 5 bonus).
+ * Display: remaining_total / total_cap with optional +N bonus (purple).
+ * Example Pro 500 + 22 bonus, 13 left → 13/522 +22 bonus
  */
 export function formatCreditBucketDisplay(
   bucket: CanonicalCreditBucket,
   kind: "build" | "action",
   planId: string,
   isConfirmed: boolean,
-): CreditBucketDisplay {
-  const monthlyAllowance = Math.max(
+): CreditBucketDisplayModel {
+  const planAllowance = Math.max(
     isConfirmed && bucket.planAllowance > 0
       ? bucket.planAllowance
       : planMonthlyAllowance(kind, planId),
     0,
   );
-  const explicitBonus = Math.max(bucket.bonusActive, 0);
-  const rawRemaining = Math.max(0, bucket.available);
-  const overflowBonus = Math.max(0, rawRemaining - monthlyAllowance);
-  const bonusOrTopUp = explicitBonus > 0 ? explicitBonus : overflowBonus;
-  const totalCap = creditBucketTotalCap(bucket, kind, planId, isConfirmed);
-
-  const displayText = `${formatCreditAmount(rawRemaining)}/${formatCreditAmount(totalCap)}`;
+  const bonusAmount = resolveBonusAmount(bucket, planAllowance, isConfirmed);
+  const totalCap = Math.max(planAllowance + bonusAmount, bucket.available, 0);
+  const remainingTotal = Math.max(0, bucket.available);
+  const hasBonus = bonusAmount > 0;
+  const bonusLabel = hasBonus ? `+${formatCreditAmount(bonusAmount)} bonus` : null;
 
   return {
-    remaining: rawRemaining,
-    monthlyAllowance,
-    bonusOrTopUp,
-    displayText,
-    secondaryText: null,
+    remainingTotal,
+    totalCap,
+    planAllowance,
+    bonusAmount,
+    hasBonus,
+    bonusLabel,
+    displayText: `${formatCreditAmount(remainingTotal)}/${formatCreditAmount(totalCap)}`,
+    secondaryText: bonusLabel,
   };
 }
 

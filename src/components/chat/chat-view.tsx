@@ -42,6 +42,7 @@ import { isSubmitDebugEnabled } from "@/lib/dev/submit-debug-enabled";
 import {
   beginConversationLoad,
   endConversationLoad,
+  EMPTY_CHAT_MESSAGES,
   useChatConversationStore,
 } from "@/lib/stores/chat-conversation-store";
 
@@ -152,7 +153,9 @@ function useMessages(
   activeConvRef: React.RefObject<string | null>,
 ) {
   const history = useChatConversationStore((s) =>
-    conversationId ? (s.messagesByConversationId[conversationId] ?? []) : [],
+    conversationId
+      ? (s.messagesByConversationId[conversationId] ?? EMPTY_CHAT_MESSAGES)
+      : EMPTY_CHAT_MESSAGES,
   );
   const loading = useChatConversationStore((s) =>
     conversationId ? (s.loadingByConversationId[conversationId] ?? false) : false,

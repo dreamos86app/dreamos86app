@@ -7,6 +7,10 @@ import {
   isCrmLikeArchetype,
   previewArchetypeMismatch,
 } from "@/lib/preview/preview-archetype-guard";
+import {
+  injectDreamOSBrandingIntoPreviewHtml,
+  type GeneratedAppBrandingOptions,
+} from "@/lib/branding/generated-app-branding";
 
 export type PreviewHtmlOptions = {
   projectId?: string;
@@ -14,6 +18,7 @@ export type PreviewHtmlOptions = {
   buildJobId?: string | null;
   snapshotHash?: string | null;
   archetypeId?: string | null;
+  branding?: GeneratedAppBrandingOptions;
 };
 
 function escapeAttr(value: string): string {
@@ -36,7 +41,7 @@ export function wrapPreviewDocument(bodyInner: string, options?: PreviewHtmlOpti
     .filter(Boolean)
     .join(" ");
 
-  return `<!DOCTYPE html>
+  const doc = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
@@ -50,6 +55,7 @@ export function wrapPreviewDocument(bodyInner: string, options?: PreviewHtmlOpti
   <div ${rootAttrs} class="min-h-screen">${bodyInner}</div>
 </body>
 </html>`;
+  return injectDreamOSBrandingIntoPreviewHtml(doc, options?.branding ?? {});
 }
 
 /** Build a self-contained HTML snapshot from generated files. */

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import type { PaddleAdminConfigStatus } from "@/lib/billing/paddle-config-status";
+import { paddleOwnerTestCheckoutEnabled } from "@/lib/billing/paddle-public-checkout";
 import { toast } from "@/lib/toast";
 
 export function AdminPaddleConfigPanel() {
@@ -135,9 +136,11 @@ export function AdminPaddleConfigPanel() {
             <Copy className="mr-1 size-3.5" />
             Copy Vercel env checklist
           </Button>
-          <Button type="button" variant="primary" size="sm" asChild>
-            <Link href="/admin/billing/paddle/test-checkout">Owner live checkout test</Link>
-          </Button>
+          {config.ownerTestCheckoutEnabled && paddleOwnerTestCheckoutEnabled() ? (
+            <Button type="button" variant="primary" size="sm" asChild>
+              <Link href="/admin/billing/paddle/test-checkout">Open owner test checkout</Link>
+            </Button>
+          ) : null}
         </div>
       </section>
 

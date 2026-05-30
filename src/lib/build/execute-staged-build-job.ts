@@ -16,6 +16,7 @@ import { hasSuccessfulChargeForOperation } from "@/lib/chat/server-idempotency";
 import { clearGeneratedBuildFiles } from "@/lib/build/persist-generated-files";
 import { assertBuildFilesPersisted } from "@/lib/build/assert-build-files-persisted";
 import { MIN_RENDERABLE_FILES } from "@/lib/build/build-success-contract";
+import { canCompleteWithSavedFiles } from "@/lib/build/post-build-contract";
 import { startPreviewSession } from "@/lib/preview/preview-build-service";
 import { lifecyclePatch } from "@/lib/projects/project-lifecycle";
 import {
@@ -187,6 +188,10 @@ export async function executeStagedBuildJob(input: ExecuteStagedBuildJobInput): 
     await persistStage("worker_claimed");
     await persistStage("build_pipeline_entered");
     await persistStage("planning_app_started", "Organizing screens and features");
+    await persistAssistantBuildMessage(input.writer, eventCtx, {
+      message: "I'll map your app structure and start generating files.",
+      progressPercent: 10,
+    }).catch(() => undefined);
 
     const pipelinePromise = runStagedBuildPipeline({
       writer: input.writer,
@@ -291,11 +296,13 @@ export async function executeStagedBuildJob(input: ExecuteStagedBuildJobInput): 
       });
     }
 
-    const buildSucceeded = pr.ok && pr.buildContract.passed;
+    const saveableFileCount = filterRenderableBuildFiles(pr.files).length;
+    const buildSucceeded =
+      (pr.ok && pr.buildContract.passed) ||
+      canCompleteWithSavedFiles(saveableFileCount, pr.buildContract.failures);
     const partialCreditStop =
       ("partialCreditStop" in pr && pr.partialCreditStop === true) ||
       pr.errorMessage === "partial_credit_stop";
-    const saveableFileCount = filterRenderableBuildFiles(pr.files).length;
 
     if (
       !buildSucceeded &&
