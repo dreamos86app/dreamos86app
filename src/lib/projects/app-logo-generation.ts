@@ -74,6 +74,7 @@ async function generateOpenAiLogo(prompt: string): Promise<{
       prompt,
       n: 1,
       size: "1024x1024",
+      quality: "low",
     }),
   });
 

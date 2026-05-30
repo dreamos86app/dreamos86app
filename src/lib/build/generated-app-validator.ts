@@ -107,10 +107,10 @@ export function validateGeneratedApp(input: {
           pathsLower.includes("dashboard");
         return !hasDashboard;
       }
-      return (
-        !pathsLower.includes(norm) &&
-        !new RegExp(norm.replace(/\//g, "[/\\\\]"), "i").test(paths)
-      );
+      const hasPageFile =
+        pathList.some((p) => new RegExp(`(^|/)app/${norm.replace(/\//g, "/")}/page\\.(tsx|jsx|js)$`, "i").test(p)) ||
+        pathList.some((p) => new RegExp(`(^|/)app/${norm}\\.(tsx|jsx|js)$`, "i").test(p));
+      return !hasPageFile && !pathsLower.includes(`app/${norm}/`);
     });
     if (missing.length) reasons.push(`missing_blueprint_routes:${missing.slice(0, 5).join(",")}`);
   }

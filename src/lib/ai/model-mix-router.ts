@@ -38,15 +38,11 @@ function modeFromOperation(op: AiOperationType): ModelMixMode {
   return "planning";
 }
 
-function pickHelperModel(
-  requested?: string | null,
-  manualSelection?: boolean,
-): { modelId: string; reason: string } {
-  if (manualSelection && requested && requested !== "automatic") {
-    return { modelId: requested.trim(), reason: "user_selected_helper" };
-  }
-  const cheap = pickCheapPlannerModel();
-  return { modelId: cheap.modelId, reason: cheap.reason };
+function pickHelperModel(): { modelId: string; reason: string } {
+  const cheap = pickCheapDiscussModel(null);
+  if (cheap.modelId) return { modelId: cheap.modelId, reason: "cheap_helper_discuss" };
+  const planner = pickCheapPlannerModel();
+  return { modelId: planner.modelId, reason: planner.reason };
 }
 
 function pickAutomaticMainModel(mode: ModelMixMode, complexity: number): string {
@@ -122,7 +118,7 @@ export function resolveModelMix(input: {
   const mode = modeFromOperation(input.operationType);
   const complexity = input.complexity ?? 5;
   const automatic = isAutomaticModelId(input.userSelectedModelId);
-  const helper = pickHelperModel(input.userSelectedModelId, !automatic);
+  const helper = pickHelperModel();
 
   let mainModelId: string;
   let policyNote: string;
@@ -132,7 +128,7 @@ export function resolveModelMix(input: {
     policyNote = "automatic_model_mix";
   } else {
     mainModelId = input.userSelectedModelId!.trim();
-    policyNote = "user_selected_all_ops";
+    policyNote = "user_selected_primary_only";
   }
 
   const ensured = ensureSelectable(mainModelId, input.operationType);

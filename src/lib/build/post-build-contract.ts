@@ -67,10 +67,9 @@ function requiredPagesMissing(files: BuildFile[], slugs: string[]): string[] {
       const hasDashboard = pathList.some((p) => /(^|\/)app\/page\.(tsx|jsx|js)$/i.test(p) || /dashboard/i.test(p));
       return !hasDashboard;
     }
-    const hasPage =
-      pathList.some((p) => p.includes(`app/${s}/page.`)) ||
-      pathsBlob.includes(`app/${s}/page`) ||
-      pathsBlob.includes(s);
+    const hasPage = pathList.some((p) =>
+      new RegExp(`(^|/)app/${s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/page\\.(tsx|jsx|js)$`, "i").test(p),
+    );
     return !hasPage;
   });
 }

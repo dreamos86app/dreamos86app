@@ -95,13 +95,21 @@ export function BillingSettings() {
   }, [paddleReturn, loadBilling]);
 
   React.useEffect(() => {
+    let focusTimer: ReturnType<typeof setTimeout> | undefined;
     const onFocus = () => {
-      void loadBilling();
-      void refreshCredits({ reason: "manual" });
+      if (paddleReturn === "success") return;
+      if (focusTimer) clearTimeout(focusTimer);
+      focusTimer = setTimeout(() => {
+        void loadBilling();
+        void refreshCredits({ reason: "manual" });
+      }, 800);
     };
     window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
-  }, [loadBilling]);
+    return () => {
+      if (focusTimer) clearTimeout(focusTimer);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [loadBilling, paddleReturn]);
 
   const planId = billing?.planId ?? profile?.plan_id ?? "free";
   const planInfo = PLAN_DISPLAY[planId as keyof typeof PLAN_DISPLAY] ?? PLAN_DISPLAY.free;

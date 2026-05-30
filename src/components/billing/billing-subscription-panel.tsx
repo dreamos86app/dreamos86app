@@ -29,6 +29,8 @@ import {
   resolvePlanChange,
 } from "@/lib/billing/plan-change-router";
 import { PlanUpgradeModal } from "@/components/billing/plan-upgrade-modal";
+import { BillingDowngradeModal } from "@/components/billing/billing-downgrade-modal";
+import Link from "next/link";
 
 type BillingSubscription = {
   status: string;
@@ -62,9 +64,7 @@ export function BillingSubscriptionPanel({
   const [upgradeInterval, setUpgradeInterval] = React.useState<"monthly" | "yearly">("monthly");
   const [showCompare, setShowCompare] = React.useState(false);
   const [showDowngrade, setShowDowngrade] = React.useState(false);
-  const [downgradeTarget, setDowngradeTarget] = React.useState<BillablePlanId | "free" | null>(
-    null,
-  );
+  const [modalDowngrade, setModalDowngrade] = React.useState<BillablePlanId | "free" | null>(null);
   const [portalLoading, setPortalLoading] = React.useState(false);
   const [acting, setActing] = React.useState(false);
 
@@ -103,15 +103,37 @@ export function BillingSubscriptionPanel({
     }
   }
 
-  async function scheduleDowngrade(plan: BillablePlanId | "free") {
-    if (downgradeTarget !== plan) {
-      setDowngradeTarget(plan);
+  async function confirmDowngrade(plan: BillablePlanId | "free") {
+    setActing(true);
+    if (plan === "free") {
+      const cancelRes = await fetch("/api/billing/paddle/cancel", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirmed: true }),
+      });
+      const cancelJson = (await cancelRes.json()) as { message?: string; error?: string; portalUrl?: string };
+      if (cancelRes.status === 409 && cancelJson.portalUrl) {
+        window.location.href = cancelJson.portalUrl;
+        setActing(false);
+        return;
+      }
+      if (!cancelRes.ok) {
+        toast.error(cancelJson.error ?? "Could not schedule cancellation");
+        setActing(false);
+        return;
+      }
+      toast.success(cancelJson.message ?? "Cancellation scheduled for period end");
+      setModalDowngrade(null);
+      setShowDowngrade(false);
+      onRefresh();
+      setActing(false);
       return;
     }
-    setActing(true);
     const res = await fetch("/api/billing/paddle/downgrade", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ planId: plan, confirmed: true }),
     });
     const json = (await res.json()) as { message?: string; error?: string };
@@ -121,7 +143,7 @@ export function BillingSubscriptionPanel({
       return;
     }
     toast.success(json.message ?? "Downgrade scheduled for next renewal");
-    setDowngradeTarget(null);
+    setModalDowngrade(null);
     setShowDowngrade(false);
     onRefresh();
   }
@@ -306,11 +328,9 @@ export function BillingSubscriptionPanel({
                   variant="outline"
                   size="sm"
                   disabled={acting}
-                  onClick={() => void scheduleDowngrade(target)}
+                  onClick={() => setModalDowngrade(target)}
                 >
-                  {downgradeTarget === target
-                    ? `Confirm downgrade to ${billablePlanDefinition(target).label}`
-                    : `Schedule downgrade to ${billablePlanDefinition(target).label}`}
+                  Schedule downgrade to {billablePlanDefinition(target).label}
                 </Button>
               ))}
               {isPaid ? (
@@ -319,11 +339,9 @@ export function BillingSubscriptionPanel({
                   variant="outline"
                   size="sm"
                   disabled={acting}
-                  onClick={() => void scheduleDowngrade("free")}
+                  onClick={() => setModalDowngrade("free")}
                 >
-                  {downgradeTarget === "free"
-                    ? "Confirm downgrade to Free"
-                    : "Schedule downgrade to Free"}
+                  Cancel subscription (downgrade to Free)
                 </Button>
               ) : null}
             </div>
@@ -331,14 +349,31 @@ export function BillingSubscriptionPanel({
         </section>
       ) : null}
 
-      {/* E. Compare all plans */}
-      <button
-        type="button"
-        className="text-[12px] text-accent hover:underline"
-        onClick={() => setShowCompare(true)}
-      >
-        Compare all plans
-      </button>
+      {/* E. Compare / view all plans */}
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          className="text-[12px] text-accent hover:underline"
+          onClick={() => setShowCompare(true)}
+        >
+          Compare all plans
+        </button>
+        <Link href="/pricing" className="text-[12px] font-medium text-accent hover:underline">
+          View all plans
+        </Link>
+      </div>
+
+      <BillingDowngradeModal
+        open={modalDowngrade != null}
+        onClose={() => setModalDowngrade(null)}
+        target={modalDowngrade ?? "free"}
+        currentPlanId={planId}
+        renewalDate={renewalDate}
+        acting={acting}
+        onConfirm={async () => {
+          if (modalDowngrade) await confirmDowngrade(modalDowngrade);
+        }}
+      />
 
       {showCompare ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -370,7 +405,10 @@ export function BillingSubscriptionPanel({
                             <button
                               type="button"
                               className="text-accent hover:underline"
-                              onClick={() => void scheduleDowngrade("free")}
+                              onClick={() => {
+                                setShowCompare(false);
+                                setModalDowngrade("free");
+                              }}
                             >
                               Downgrade
                             </button>
@@ -403,8 +441,7 @@ export function BillingSubscriptionPanel({
                             onClick={() => {
                               if (resolved.action === "schedule_downgrade") {
                                 setShowCompare(false);
-                                setShowDowngrade(true);
-                                void scheduleDowngrade(row.id);
+                                setModalDowngrade(row.id);
                               } else if (row.id !== "free") {
                                 setShowCompare(false);
                                 startUpgrade(row.id);

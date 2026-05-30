@@ -41,6 +41,9 @@ import {
   hasDeterministicArchetypePlan,
 } from "@/lib/build/deterministic-archetype-plan";
 import { callProviderWithBuildTimeout, withTimeout } from "@/lib/build/timed-build-operations";
+import { normalizeAppRouterBuildFiles } from "@/lib/build/app-router-route-normalizer";
+import { countThinFiles } from "@/lib/build/meaningful-file-guard";
+import { resolveModelMix } from "@/lib/ai/model-mix-router";
 import type {
   BuildWorkerTraceSnapshot,
   BuildWorkerTraceStage,
@@ -387,6 +390,14 @@ export async function runStagedBuildPipeline(input: {
   const scope = scoreTaskScope(executionPrompt);
   const effectiveComplexity = firstPassScope?.complexity ?? scope.complexity;
   const effectiveMaxFiles = firstPassScope?.maxFiles ?? scope.maxFiles;
+
+  const primaryMix = resolveModelMix({
+    operationType: "frontend_implementation",
+    userSelectedModelId: input.userSelectedModelId,
+    complexity: effectiveComplexity,
+    ownerEmail: input.userEmail,
+  });
+  primaryModelId = primaryMix.mainModelId;
 
   track(
     events,
@@ -842,7 +853,20 @@ export async function runStagedBuildPipeline(input: {
     };
   }
 
+  const blueprintRoutes = planParsed?.pages?.map((p) => String(p)) ?? archetype.coreRoutes;
+  const routeNorm = normalizeAppRouterBuildFiles(allFiles, {
+    blueprintRoutes,
+    appName,
+  });
+  allFiles = routeNorm.files;
+  if (routeNorm.moved.length && process.env.NODE_ENV !== "production") {
+    console.info("[build] app_router_normalized", routeNorm.moved.slice(0, 12));
+  }
+
   let scaffoldFallback = applyArchetypeScaffoldFallback(archetype.id, allFiles, appName);
+  if (countThinFiles(filterRenderableBuildFiles(allFiles)) > 3) {
+    scaffoldFallback = applyArchetypeScaffoldFallback(archetype.id, allFiles, appName);
+  }
   if (scaffoldFallback.usedFallback) {
     track(events, "validating", "Strengthening the app structure…");
     track(events, "writing", "Adding the required app structure");
@@ -856,6 +880,12 @@ export async function runStagedBuildPipeline(input: {
       });
     }
   }
+
+  const postScaffoldNorm = normalizeAppRouterBuildFiles(allFiles, {
+    blueprintRoutes,
+    appName,
+  });
+  allFiles = postScaffoldNorm.files;
 
   const allowBackend =
     (firstPassScope?.includeBackend ?? complexity >= 7) &&

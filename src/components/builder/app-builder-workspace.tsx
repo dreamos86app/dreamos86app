@@ -531,8 +531,21 @@ export function AppBuilderWorkspace({
   if (files.length === 0 && filesReady) {
     return (
       <div className={cn("flex h-full flex-col items-center justify-center gap-3 p-8 text-center", className)}>
-        <p className="text-[14px] font-semibold text-foreground">Loading app files…</p>
-        <Loader2 className="size-5 animate-spin text-muted-foreground" />
+        <p className="text-[14px] font-semibold text-foreground">Files are ready — refreshing code tree…</p>
+        <p className="max-w-xs text-[12px] text-muted-foreground">
+          If this persists, switch tabs or run another build pass to reload files from the project.
+        </p>
+        {onFilesChanged ? (
+          <button
+            type="button"
+            className="rounded-xl bg-accent px-4 py-2 text-[12px] font-semibold text-white"
+            onClick={() => onFilesChanged()}
+          >
+            Reload files
+          </button>
+        ) : (
+          <Loader2 className="size-5 animate-spin text-muted-foreground" />
+        )}
       </div>
     );
   }

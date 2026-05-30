@@ -310,6 +310,7 @@
     "verify:build-ui-repair-pass": "node scripts/verify-build-ui-repair-pass.mjs",
     "verify:build-success-contract": "node scripts/verify-build-success-contract.mjs",
     "verify:p0-build-completion": "node scripts/verify-build-completion-p0.mjs",
+    "verify:release-blockers-p0": "node scripts/verify-release-blockers-p0.mjs",
     "verify:build-with-files-never-couldnt-start": "node scripts/verify-build-completion-p0.mjs",
     "verify:ui-quality-never-blocks-preview": "node scripts/verify-build-completion-p0.mjs",
     "verify:no-user-facing-ui-quality-repair-copy": "node scripts/verify-build-completion-p0.mjs",

@@ -594,7 +594,13 @@ export function ImmersiveWorkspace({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- resume running job from URL once
   }, [initialJobId, effectiveProjectId, searchParams, activeBuildJob, supabase]);
 
-  type PromptQueueItem = { id: string; text: string; status: "queued" | "paused"; createdAt: number };
+  type PromptQueueItem = {
+    id: string;
+    text: string;
+    status: "queued" | "paused";
+    createdAt: number;
+    mode: "discuss" | "edit" | "build";
+  };
   const promptQueueRef = React.useRef<PromptQueueItem[]>([]);
   const lastEnqueueFingerprintRef = React.useRef<{ text: string; at: number } | null>(null);
   const [queueCount, setQueueCount] = React.useState(0);
@@ -658,6 +664,7 @@ export function ImmersiveWorkspace({
   }, []);
 
   const drainPromptQueueRef = React.useRef<() => void>(() => {});
+  const pipelineBusyForQueueRef = React.useRef(false);
   const loadBlueprintRef = React.useRef<(text: string) => Promise<void>>(() => Promise.resolve());
 
   const { messages, sendMessage, status, error, clearError, regenerate, setMessages, stop } = useChat({
@@ -886,14 +893,22 @@ export function ImmersiveWorkspace({
             .order("created_at", { ascending: true })
             .then(({ data }) => {
               if (!data?.length) return;
-              setMessages(
-                data.map((row) => ({
+              setMessages((prev) => {
+                const fromDb = data.map((row) => ({
                   id: row.id,
                   role: row.role as "user" | "assistant",
                   parts: [{ type: "text" as const, text: row.content ?? "" }],
-                })),
-              );
+                }));
+                const dbIds = new Set(fromDb.map((m) => m.id));
+                const localQueued = prev.filter(
+                  (m) => typeof m.id === "string" && m.id.startsWith("queue-"),
+                );
+                const keepLocal = localQueued.filter((m) => !dbIds.has(m.id));
+                return [...fromDb, ...keepLocal];
+              });
               setPendingUserBubble(null);
+              submitInFlightRef.current = false;
+              setBuildStarting(false);
             });
         }
         if (pid && uid) {
@@ -1336,11 +1351,23 @@ export function ImmersiveWorkspace({
       text: trimmed,
       status: "queued",
       createdAt: Date.now(),
+      mode,
     };
     promptQueueRef.current.push(item);
     syncQueueState();
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `queue-${item.id}`,
+        role: "user" as const,
+        parts: [{ type: "text" as const, text: trimmed }],
+      },
+    ]);
     applyComposerText("");
     if (composerTextareaRef.current) composerTextareaRef.current.value = "";
+    if (!pipelineBusyForQueueRef.current) {
+      setTimeout(() => drainPromptQueueRef.current(), 80);
+    }
   }
 
   function cancelQueuedPrompt(id: string) {
@@ -1449,14 +1476,7 @@ export function ImmersiveWorkspace({
       streamActiveRef.current ||
       submitInFlightRef.current ||
       (activeBuildJob != null && (buildJobProgress == null || !buildJobProgress.done));
-    const followUpQueue =
-      Boolean(effectiveProjectId) &&
-      mode === "build" &&
-      projectFiles.length > 0 &&
-      !pipelineBusy &&
-      !buildJobActive;
-
-    if (pipelineBusy || options?.queueOnly || followUpQueue) {
+    if (pipelineBusy || options?.queueOnly) {
       if (!composerHasMeaningfulText(text)) {
         notifySubmitBlocked("empty");
         return;
@@ -1813,6 +1833,7 @@ export function ImmersiveWorkspace({
     const next = promptQueueRef.current[nextIdx]!;
     promptQueueRef.current.splice(nextIdx, 1);
     syncQueueState();
+    if (next.mode !== mode) setMode(next.mode);
     toast.info("Starting queued prompt…");
     pendingOperationIdRef.current = null;
     void runSubmitRef.current("button", next.text);
@@ -1989,15 +2010,10 @@ export function ImmersiveWorkspace({
     submitInFlightRef.current ||
     (activeBuildJob != null && (buildJobProgress == null || !buildJobProgress.done));
   /** Follow-up prompts on a built project queue instead of starting a new build (P0.22). */
-  const followUpQueueEligible =
-    Boolean(effectiveProjectId) &&
-    mode === "build" &&
-    hasGeneratedFiles &&
-    !pipelineBusyForQueue &&
-    !buildJobActive;
-  const queueReady = buildJobActive || followUpQueueEligible;
+  pipelineBusyForQueueRef.current = pipelineBusyForQueue;
+  const queueReady = buildJobActive;
   const composerReadyToSend = composerHasText || composerDomHasText;
-  const showQueueAffordance = queueReady && !composerReadyToSend;
+  const showQueueAffordance = buildJobActive && composerReadyToSend;
   const filesReady = hasGeneratedFiles;
   const importedReady = isImportedProjectReady({
     metadata: effectiveProject?.metadata,
@@ -2855,7 +2871,7 @@ export function ImmersiveWorkspace({
                     uiSubmitLog("create-ui", "build click");
                     submitDebug("create", "button click");
                     void runSubmitRef.current("button", undefined, {
-                      queueOnly: e.shiftKey || buildJobActive || followUpQueueEligible,
+                      queueOnly: e.shiftKey || buildJobActive,
                     });
                   }}
                   className={cn(

@@ -19,6 +19,7 @@ import {
 import { cn } from "@/lib/utils";
 import { IntegrationShowcaseSection } from "@/components/marketing/integrations-showcase";
 import { YourAppsSection, type YourAppsProject } from "@/components/os-home/your-apps-section";
+import { ModelUsageDonut } from "@/components/dashboard/model-usage-donut";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { storeAutostartHandoff } from "@/lib/create/autostart-handoff";
 import { useCreditsStore } from "@/lib/stores/credits-store";
@@ -566,6 +567,15 @@ export function OsHome({ recentProjects }: OsHomeProps) {
           className="mx-auto w-full max-w-5xl"
         >
           <YourAppsSection projects={recentProjects} />
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.12 }}
+          className="mx-auto w-full max-w-5xl"
+        >
+          <ModelUsageDonut />
         </motion.div>
 
         {/* App inspiration feed */}

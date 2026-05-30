@@ -10,6 +10,7 @@ import {
   isHiddenGeneratedPath,
   type BuildFile,
 } from "@/lib/build/generated-file-utils";
+import { normalizeAppRouterBuildFiles } from "@/lib/build/app-router-route-normalizer";
 import { MIN_RENDERABLE_FILES } from "@/lib/build/build-success-contract";
 
 type Writer = SupabaseClient<Database>;
@@ -36,7 +37,8 @@ export async function persistGeneratedBuildFiles(input: {
   executionInstanceId?: string;
 }): Promise<PersistBuildFilesResult> {
   const writer = persistenceWriter(input.writer);
-  const renderable = filterRenderableBuildFiles(input.files);
+  const normalized = normalizeAppRouterBuildFiles(input.files, { appName: "Dream App" });
+  const renderable = filterRenderableBuildFiles(normalized.files);
   if (renderable.length === 0) {
     return { ok: false, savedCount: 0, renderableCount: 0, error: "no_renderable_files" };
   }
