@@ -59,7 +59,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (!profile?.id) return;
     const { isConfirmed } = useCreditsStore.getState();
     if (!isConfirmed) seedCreditsFromProfile(profile);
-  }, [profile?.id, profile?.plan_id, profile?.credits_remaining, profile]);
+  }, [profile?.id, profile?.plan_id, profile]);
 
   React.useEffect(() => {
     void useAuthStore.persist.rehydrate();

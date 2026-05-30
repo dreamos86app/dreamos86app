@@ -561,6 +561,9 @@ export async function runStagedBuildPipeline(input: {
         app_type: archetypeToLegacyAppType(archetype.id),
         design_brief_routes: designBrief.routes,
         blueprint_routes: designBrief.routes,
+        last_preview_session_id: null,
+        preview_ready: false,
+        preview_honest: false,
       } as Json,
     } as never)
     .eq("id", input.projectId)
@@ -1046,6 +1049,7 @@ export async function runStagedBuildPipeline(input: {
       ownerId: input.userId,
       appType: archetypeToLegacyAppType(archetype.id),
       scaffoldFallbackUsed: scaffoldFallback.usedFallback,
+      archetypeId: archetype.id,
     },
     2,
   );
@@ -1066,6 +1070,7 @@ export async function runStagedBuildPipeline(input: {
           ownerId: input.userId,
           appType: archetypeToLegacyAppType(archetype.id),
           scaffoldFallbackUsed: true,
+          archetypeId: archetype.id,
         },
         1,
       );

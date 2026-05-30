@@ -88,7 +88,7 @@ export function CreditsView() {
           build={build}
           action={action}
           planId={planId}
-          loading={creditsLoading}
+          loading={creditsLoading || !isConfirmed}
           error={creditsError}
           variant="full"
           showUpgrade={(profile?.plan_id ?? planId) === "free" || build.available < build.planAllowance * 0.15}

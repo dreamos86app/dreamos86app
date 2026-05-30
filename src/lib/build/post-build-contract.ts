@@ -13,7 +13,8 @@ import {
 } from "@/lib/build/generated-ui-quality-checker";
 import { PREVIEW_READY_MIN_SCORE } from "@/lib/build/ui-quality-contract";
 import { repairBuildFiles } from "@/lib/build/build-contract-repair";
-import { mergeRestaurantInventoryScaffold } from "@/lib/build/restaurant-inventory-scaffold";
+import { mergeScaffoldForArchetype } from "@/lib/build/archetype-scaffold-fallback";
+import type { AppArchetypeId } from "@/lib/build/app-archetype-classifier";
 import {
   countRenderablePages,
   filterRenderableBuildFiles,
@@ -36,6 +37,7 @@ export type PostBuildContractInput = {
   appType?: string | null;
   /** When true, strip `no_files` / empty-file failures — scaffold guarantees a tree. */
   scaffoldFallbackUsed?: boolean;
+  archetypeId?: string | null;
 };
 
 export type PostBuildContractResult = {
@@ -239,8 +241,12 @@ export function enforcePostBuildContractWithRepair(
       );
     if (!canRepair) break;
 
-    if (input.scaffoldFallbackUsed || (input.requiredPageSlugs?.includes("dashboard") && input.requiredPageSlugs.includes("inventory"))) {
-      files = mergeRestaurantInventoryScaffold(files);
+    if (input.scaffoldFallbackUsed && input.archetypeId) {
+      files = mergeScaffoldForArchetype(
+        input.archetypeId as AppArchetypeId,
+        files,
+        input.appName ?? "Dream App",
+      );
     }
 
     files = repairBuildFiles({
@@ -258,6 +264,9 @@ export function enforcePostBuildContractWithRepair(
 export function requiredPageSlugsForArchetype(archetypeId: string): string[] | null {
   if (archetypeId === "restaurant_inventory") {
     return ["dashboard", "inventory", "suppliers", "alerts", "settings"];
+  }
+  if (archetypeId === "crm") {
+    return ["donors", "donations", "campaigns", "recurring-gifts", "automations", "settings"];
   }
   return null;
 }

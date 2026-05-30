@@ -257,7 +257,7 @@ export async function persistTraceStage(
                   ? "planning_app"
                   : "understanding_request",
     title,
-    detail: input.detail ?? input.stage,
+    detail: input.detail ?? title,
     progressPercent: progressForStage(input.stage),
     metadata: {
       trace_stage: input.stage,

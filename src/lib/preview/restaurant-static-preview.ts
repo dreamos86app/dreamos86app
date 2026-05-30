@@ -4,6 +4,7 @@ export function isRestaurantInventoryPreview(
   files: Array<{ path: string; content: string }>,
   archetypeId?: string | null,
 ): boolean {
+  if (archetypeId && archetypeId !== "restaurant_inventory") return false;
   if (archetypeId === "restaurant_inventory") return true;
   const paths = files.map((f) => f.path.replace(/\\/g, "/").toLowerCase());
   if (paths.length < 8) return false;

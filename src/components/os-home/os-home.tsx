@@ -437,10 +437,9 @@ function AppInspirationFeed({ onPickPrompt }: { onPickPrompt: (prompt: string) =
 
 function PlatformStats({ appCount }: { appCount: number }) {
   const credits = useCreditsStore((s) => s.remaining);
-  const profileCredits = useAuthStore((s) => s.profile?.credits_remaining);
+  const isConfirmed = useCreditsStore((s) => s.isConfirmed);
+  const loading = useCreditsStore((s) => s.loading);
   const hydrated = useHydrated();
-  const displayCredits =
-    credits > 0 ? credits : typeof profileCredits === "number" ? profileCredits : credits;
 
   return (
     <div className="flex items-center gap-4 text-[11.5px] text-muted-foreground/70">
@@ -451,7 +450,7 @@ function PlatformStats({ appCount }: { appCount: number }) {
       {hydrated && (
         <span className="flex items-center gap-1.5">
           <Zap className="size-3 text-accent/70" strokeWidth={1.75} />
-          {displayCredits} credits
+          {isConfirmed ? `${credits} credits` : loading ? "Loading credits…" : "—"}
         </span>
       )}
     </div>

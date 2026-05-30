@@ -97,8 +97,8 @@ export async function processPaddleWebhookPayload(input: {
   }
 
   if (!userId) {
-    processingStatus = "missing_custom_data";
-    error = "missing_custom_data";
+    processingStatus = "received_simulation_or_unlinked";
+    error = isSimulation ? "simulation" : "missing_user_id";
     const { duplicate } = await storePaddleWebhookEvent({
       ...storeBase,
       processingStatus,

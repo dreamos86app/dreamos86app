@@ -799,7 +799,7 @@ export function ImmersiveWorkspace({
             ? terminal.latest.metadata.credits_used
             : undefined,
         errorDetail: terminal.error ?? terminal.latest?.detail ?? undefined,
-        previewReady: facts.hasPreviewSession,
+        previewReady: facts.hasPreviewSession || fileCountHint > 0,
       });
       setBuildRunSummary({
         variant: resolved.variant,
@@ -2150,6 +2150,10 @@ export function ImmersiveWorkspace({
       setPreviewIssue(null);
       return;
     }
+    if (effectivePreviewSrcDoc?.trim()) {
+      setPreviewIssue(null);
+      return;
+    }
     let cancelled = false;
     fetch(`/api/projects/${effectiveProjectId}/repair`, { credentials: "include" })
       .then((r) => (r.ok ? r.json() : null))
@@ -2173,7 +2177,7 @@ export function ImmersiveWorkspace({
     return () => {
       cancelled = true;
     };
-  }, [effectiveProjectId, codeFiles.length, projectDataRefresh]);
+  }, [effectiveProjectId, codeFiles.length, projectDataRefresh, effectivePreviewSrcDoc]);
   const extractedCode = React.useMemo(() => extractFencedCode(lastAssistantText), [lastAssistantText]);
   const integrationSecretKeys = React.useMemo(
     () => (mode === "build" ? detectRequiredSecretNames(lastAssistantText) : []),

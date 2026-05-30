@@ -238,26 +238,45 @@ export async function persistAssistantBuildMessage(
   });
 }
 
+function openingAssistantMessage(promptHint?: string): { title: string; detail: string } {
+  const hint = promptHint?.trim() ?? "";
+  const lower = hint.toLowerCase();
+  if (/nonprofit|donor|donation|campaign|recurring|thank-?you|crm/.test(lower)) {
+    return {
+      title: "Nonprofit donor CRM",
+      detail:
+        "I'll build this as a nonprofit donor CRM. I'm going to map the screens, data, and automation flow first.",
+    };
+  }
+  if (hint) {
+    return {
+      title: "Understanding the request",
+      detail: `I'll shape this into an app based on your request.`,
+    };
+  }
+  return {
+    title: "Starting your build",
+    detail: "Reading your prompt and choosing the right build path",
+  };
+}
+
 export async function emitInitialBuildEvents(
   writer: Writer,
   ctx: { jobId: string; projectId: string; userId: string; promptHint?: string },
 ): Promise<void> {
-  const hint = ctx.promptHint?.trim().slice(0, 160);
+  const opening = openingAssistantMessage(ctx.promptHint);
   await persistBuildJobEvent(writer, {
     ...ctx,
     type: "job_created",
-    title: "Starting your build",
-    detail: hint
-      ? `I'll shape this into an app based on your request.`
-      : "Reading your prompt and choosing the right build path",
+    title: opening.title,
+    detail: opening.detail,
     progressPercent: 2,
     metadata: {
       stream_category: "assistant_message",
-      display_title: hint
-        ? `I'll build this based on your request.`
-        : "Starting your build",
+      display_title: opening.title,
     },
   });
+  const hint = ctx.promptHint?.trim().slice(0, 160);
   await persistBuildJobEvent(writer, {
     ...ctx,
     type: "understanding_request",

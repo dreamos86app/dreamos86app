@@ -268,7 +268,7 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
                   action={action}
                   planId={effectivePlanId}
                   isConfirmed={isConfirmed}
-                  loading={loading}
+                  loading={loading || !isConfirmed}
                   variant="mini"
                 />
               </Link>

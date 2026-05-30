@@ -262,7 +262,7 @@ export function BillingSettings() {
                     build={build}
                     action={action}
                     planId={creditsPlanId}
-                    loading={creditsLoading}
+                    loading={creditsLoading || !isConfirmed}
                     error={creditsError}
                     variant="compact"
                     showUpgrade={planId === "free" || build.available < build.planAllowance * 0.15}

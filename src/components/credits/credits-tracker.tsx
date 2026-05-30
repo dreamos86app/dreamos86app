@@ -7,7 +7,10 @@ import { Zap, Activity, CalendarClock, ArrowUpRight, RefreshCw } from "lucide-re
 import { cn } from "@/lib/utils";
 import { formatCreditAmount } from "@/lib/credits/credit-summary";
 import type { CanonicalCreditBucket } from "@/lib/credits/canonical-credits";
-import { formatCreditBucketDisplay } from "@/lib/credits/credit-balance-display";
+import {
+  creditBucketTotalCap,
+  formatCreditBucketDisplay,
+} from "@/lib/credits/credit-balance-display";
 import { formatCreditResetLocal } from "@/lib/credits/format-credit-reset";
 import { monthlyTokensForPlan, normalizePlanId } from "@/lib/billing/plans";
 import { monthlyActionCreditsForPlan } from "@/lib/action-credits/action-credit-allowances";
@@ -41,10 +44,7 @@ function displayedCap(
   planId?: string,
   isConfirmed?: boolean,
 ): number {
-  const fallback = planCapFallback(kind, planId);
-  const allowance =
-    isConfirmed && bucket.planAllowance > 0 ? Math.max(bucket.planAllowance, fallback) : fallback;
-  return allowance + bucket.bonusActive;
+  return creditBucketTotalCap(bucket, kind, planId ?? "free", Boolean(isConfirmed));
 }
 
 function progressPctFor(bucket: CanonicalCreditBucket, kind: "build" | "action", planId?: string, isConfirmed?: boolean): number {
@@ -126,18 +126,10 @@ function CreditRow({ kind, bucket, density, planId, isConfirmed }: CreditRowProp
         <div className="flex items-center justify-center gap-1.5">
           <Icon className={cn("size-3.5", iconColor)} strokeWidth={2} />
           <p className="text-[10px] font-semibold tracking-wide text-foreground">{title}</p>
-          {display.bonusOrTopUp > 0 ? (
-            <span className="rounded-full bg-accent/10 px-1 py-px text-[8px] font-semibold text-accent ring-1 ring-accent/15">
-              +{formatCreditAmount(display.bonusOrTopUp)}
-            </span>
-          ) : null}
         </div>
         <p className="mt-1 text-[16px] font-bold tabular-nums leading-none text-foreground">
           {display.displayText}
         </p>
-        {display.secondaryText ? (
-          <p className="mt-0.5 text-[9px] font-medium text-muted-foreground">{display.secondaryText}</p>
-        ) : null}
         <div
           className={cn(
             "mt-1.5 h-1.5 w-full max-w-[148px] overflow-hidden rounded-full",
@@ -395,11 +387,7 @@ export function CreditsTracker({
   const isCompact = variant === "compact";
   const isFull = variant === "full";
 
-  const hasDisplayableCredits =
-    build.planAllowance > 0 || action.planAllowance > 0 || build.available > 0 || action.available > 0;
-  const awaitingFirstSync = !isConfirmed && loading && !hasDisplayableCredits;
-
-  if (awaitingFirstSync) {
+  if (loading || !isConfirmed) {
     return (
       <div className={cn(className)} data-testid="credits-loading">
         {isPopover || isCompact ? (

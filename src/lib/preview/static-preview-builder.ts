@@ -1,11 +1,18 @@
+import { mergeNonprofitCrmScaffold } from "@/lib/build/nonprofit-crm-scaffold";
 import {
   buildRestaurantInventoryPreviewBody,
   isRestaurantInventoryPreview,
 } from "@/lib/preview/restaurant-static-preview";
+import {
+  isCrmLikeArchetype,
+  previewArchetypeMismatch,
+} from "@/lib/preview/preview-archetype-guard";
 
 export type PreviewHtmlOptions = {
   projectId?: string;
   previewSessionId?: string;
+  buildJobId?: string | null;
+  snapshotHash?: string | null;
   archetypeId?: string | null;
 };
 
@@ -22,6 +29,9 @@ export function wrapPreviewDocument(bodyInner: string, options?: PreviewHtmlOpti
     options?.previewSessionId
       ? `data-preview-session-id="${escapeAttr(options.previewSessionId)}"`
       : "",
+    options?.buildJobId ? `data-build-job-id="${escapeAttr(options.buildJobId)}"` : "",
+    options?.snapshotHash ? `data-snapshot-hash="${escapeAttr(options.snapshotHash)}"` : "",
+    options?.archetypeId ? `data-archetype-id="${escapeAttr(options.archetypeId)}"` : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -51,17 +61,31 @@ export function buildStaticPreviewHtml(
     return wrapPreviewDocument(buildRestaurantInventoryPreviewBody(), options);
   }
 
-  const html = files.find((f) => f.path === "index.html" || f.path.endsWith("/index.html"));
-  if (html?.content?.trim()) {
-    if (html.content.includes("generated-app-preview-root")) return html.content;
+  const indexHtml = files.find((f) => f.path === "index.html" || f.path.endsWith("/index.html"));
+  if (indexHtml?.content?.trim()) {
+    if (indexHtml.content.includes("generated-app-preview-root")) return indexHtml.content;
     return wrapPreviewDocument(
-      html.content.replace(/<\/?html[^>]*>|<\/?head[^>]*>|<\/?body[^>]*>/gi, ""),
+      indexHtml.content.replace(/<\/?html[^>]*>|<\/?head[^>]*>|<\/?body[^>]*>/gi, ""),
       options,
     );
   }
 
   if (isRestaurantInventoryPreview(files, options?.archetypeId)) {
     return wrapPreviewDocument(buildRestaurantInventoryPreviewBody(), options);
+  }
+
+  if (isCrmLikeArchetype(options?.archetypeId)) {
+    const crmFiles = mergeNonprofitCrmScaffold(files, "Donor CRM");
+    const crmPage = crmFiles.find((f) => f.path === "app/page.tsx");
+    if (crmPage?.content?.trim()) {
+      const rendered = jsxToStaticHtml(crmPage.content);
+      const inner =
+        rendered && !/no renderable content/i.test(rendered)
+          ? rendered
+          : "<p class=\"p-6 text-slate-500\">Donor CRM preview</p>";
+      const crmHtml = wrapPreviewDocument(inner, options);
+      if (!previewArchetypeMismatch(crmHtml, options?.archetypeId)) return crmHtml;
+    }
   }
 
   const page =
@@ -76,7 +100,19 @@ export function buildStaticPreviewHtml(
       ? rendered
       : "<p class=\"p-6 text-slate-500\">No renderable content.</p>";
 
-  return wrapPreviewDocument(inner, options);
+  let html = wrapPreviewDocument(inner, options);
+  if (previewArchetypeMismatch(html, options?.archetypeId) && isCrmLikeArchetype(options?.archetypeId)) {
+    const crmFiles = mergeNonprofitCrmScaffold(files, "Donor CRM");
+    const crmPage = crmFiles.find((f) => f.path === "app/page.tsx");
+    const rendered = crmPage?.content ? jsxToStaticHtml(crmPage.content) : "";
+    html = wrapPreviewDocument(
+      rendered && !/no renderable content/i.test(rendered)
+        ? rendered
+        : "<p class=\"p-6\">Donor CRM — campaign tracking and donation history</p>",
+      options,
+    );
+  }
+  return html;
 }
 
 function jsxToStaticHtml(content: string): string {

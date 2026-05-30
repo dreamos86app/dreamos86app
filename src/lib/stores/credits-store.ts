@@ -131,18 +131,21 @@ export const useCreditsStore = create<CreditsState>()((set, get) => ({
     );
   },
 
+  /** Plan-only hint from profile — never overwrites confirmed credit balances. */
   applyProfileHint: (payload) => {
-    set(
-      withLegacyFields({
-        build: payload.build,
-        action: payload.action,
+    set((s) => {
+      if (s.isConfirmed) {
+        return withLegacyFields({ ...s, planId: payload.planId });
+      }
+      return withLegacyFields({
+        ...s,
         planId: payload.planId,
-        loading: false,
+        loading: true,
         error: null,
         lastSyncedAt: null,
         isConfirmed: false,
-      }),
-    );
+      });
+    });
   },
 
   deductOptimistic: (amount) =>

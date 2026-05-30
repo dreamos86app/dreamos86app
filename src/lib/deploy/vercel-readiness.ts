@@ -8,7 +8,9 @@ export function assessVercelReadiness(
     return {
       provider: "vercel",
       state: "not_connected",
-      blockers: ["Set VERCEL_ACCESS_TOKEN on the server to enable Vercel deploy"],
+      blockers: [
+        "Deployment to Vercel is not connected yet. Builds and previews still work, but publishing to Vercel requires VERCEL_ACCESS_TOKEN.",
+      ],
     };
   }
   if (connection.state === "token_invalid") {

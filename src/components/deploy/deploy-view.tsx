@@ -106,6 +106,10 @@ export function DeployView() {
           {connection.message && <p className="mt-1 text-muted-foreground">{connection.message}</p>}
           {(connection.state === "missing_env" || connection.state === "token_invalid") && (
             <div className="mt-3 space-y-1.5 text-[12px] text-muted-foreground">
+              <p className="font-medium text-foreground">
+                Deployment to Vercel is not connected yet. Builds and previews still work, but publishing
+                to Vercel requires VERCEL_ACCESS_TOKEN.
+              </p>
               <p className="font-medium text-foreground">How to connect (server-only, not Supabase):</p>
               <ol className="list-decimal space-y-1 pl-4">
                 <li>

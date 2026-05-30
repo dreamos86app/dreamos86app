@@ -74,9 +74,34 @@ export function readWebhookIds(data: Record<string, unknown>): {
   return { customerId, subscriptionId, transactionId, priceId };
 }
 
+export function parseWebhookCustomData(
+  data: Record<string, unknown>,
+): Record<string, unknown> | null {
+  const raw = data.custom_data;
+  if (raw == null) return null;
+  if (typeof raw === "object" && !Array.isArray(raw)) {
+    return raw as Record<string, unknown>;
+  }
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 export function readWebhookUserId(data: Record<string, unknown>): string | null {
-  const custom = (data.custom_data ?? {}) as Record<string, string>;
-  return custom.user_id?.trim() || custom.userId?.trim() || null;
+  const custom = parseWebhookCustomData(data);
+  if (!custom) return null;
+  const id = custom.user_id ?? custom.userId;
+  return typeof id === "string" && id.trim() ? id.trim() : null;
 }
 
 /** Persist webhook receipt (idempotent on stripe_event_id = paddle event id). */

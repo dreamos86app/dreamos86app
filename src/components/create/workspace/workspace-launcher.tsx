@@ -187,7 +187,7 @@ function WorkspaceDropdown({
             action={action}
             planId={effectivePlanId}
             isConfirmed={isConfirmed}
-            loading={loading}
+            loading={loading || !isConfirmed}
             variant="popover"
           />
         </div>

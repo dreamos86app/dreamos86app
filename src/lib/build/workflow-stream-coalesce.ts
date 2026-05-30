@@ -19,7 +19,7 @@ const GENERIC_TITLES = new Set([
 ]);
 
 const INTERNAL_LABEL_RE =
-  /worker_claim|premium_ui_repair|ui_quality_\d|score\s*\d+\s*\/\s*85|code_repair_hard|code_repair_soft|planner_model|execution_instance/i;
+  /worker_claim|build_pipeline_entered|scaffold_fallback|premium_ui_repair|ui_quality_\d|score\s*\d+\s*\/\s*85|code_repair_hard|code_repair_soft|planner_model|execution_instance|trace_stage/i;
 
 function parseLineCounts(detail: string | null | undefined): {
   added?: number;

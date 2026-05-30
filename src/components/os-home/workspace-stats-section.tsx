@@ -50,6 +50,8 @@ function StatCell({
 export function WorkspaceStatsSection({ projects }: { projects: Project[] }) {
   const hydrated = useHydrated();
   const credits = useCreditsStore((s) => s.remaining);
+  const isConfirmed = useCreditsStore((s) => s.isConfirmed);
+  const creditsLoading = useCreditsStore((s) => s.loading);
   const ref = React.useRef<HTMLElement>(null);
   useInView(ref, { once: true });
 
@@ -81,10 +83,10 @@ export function WorkspaceStatsSection({ projects }: { projects: Project[] }) {
         <StatCell label="Published" value={String(published)} index={2} loading={loading && total === 0} />
         <StatCell
           label="Credits balance"
-          value={loading ? "—" : String(credits ?? 0)}
+          value={!hydrated || !isConfirmed ? (creditsLoading ? "…" : "—") : String(credits ?? 0)}
           detail="available now"
           index={3}
-          loading={loading}
+          loading={!hydrated || (!isConfirmed && creditsLoading)}
         />
         <StatCell
           label="Recent builds"

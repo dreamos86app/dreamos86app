@@ -179,6 +179,9 @@ export function deriveBuildStatusFacts(input: {
 export function resolveWorkflowRunStatus(facts: BuildStatusFacts): WorkflowRunStatus {
   if (facts.partialBuild) return "partial_credit_stop";
   if (facts.terminalStatus === "completed") return "completed";
+  if (facts.hasFiles && facts.failureKind === "failed_before_generation") {
+    return facts.hasRepairAttempt ? "repair_needed" : "failed_after_generation";
+  }
   if (facts.failureKind === "failed_before_generation") return "failed_before_generation";
   if (facts.failureKind === "repair_failed") return "repair_failed";
   if (facts.failureKind === "repair_needed" && facts.hasFiles) return "repair_needed";
@@ -198,14 +201,7 @@ export function resolveBuildRunSummary(input: {
   creditsUsed?: number;
   errorDetail?: string;
 }): BuildRunSummaryResolved {
-  const status = resolveWorkflowRunStatus(input.facts);
   const filesCount = input.filesCount ?? input.facts.fileCount;
-  const showRefundLine = input.facts.creditsRefunded;
-  const showRepairActions =
-    status === "repair_needed" ||
-    status === "failed_after_generation" ||
-    status === "repair_failed";
-  const showPreviewActions = status === "completed" || status === "preview_ready";
 
   const copy: Record<WorkflowRunStatus, { headline: string; bodyLines: string[] }> = {
     waiting_for_prompt: {
@@ -246,46 +242,60 @@ export function resolveBuildRunSummary(input: {
       bodyLines: [
         input.errorDetail ??
           "Please try again or adjust your request.",
-        showRefundLine
+        input.facts.creditsRefunded
           ? "Credits were returned for this attempt."
           : "No credits were charged.",
       ],
     },
     failed_after_generation: {
-      headline: "First version saved — needs attention",
+      headline: "Draft saved — needs repair before publishing",
       bodyLines: [
         input.errorDetail ??
-          "The first version was saved, but it needs attention before preview.",
-        showRefundLine ? "Credits were returned for this attempt." : "",
+          "Files were saved, but UI quality needs a repair pass before you publish.",
+        input.facts.creditsRefunded ? "Credits were returned for this attempt." : "",
       ].filter(Boolean),
     },
     repair_needed: {
-      headline: "Repair needed before preview",
+      headline: "Draft saved — needs repair before publishing",
       bodyLines: [
         input.errorDetail ??
-          "The app files were generated, but a repair pass is needed before preview.",
+          "The first version was saved. Run a repair pass to improve the preview before publishing.",
       ],
     },
     repair_failed: {
       headline: "Repair did not fully complete",
       bodyLines: [
         "Your files were saved, and you can try another repair.",
-        showRefundLine ? "Credits were returned for this attempt." : "",
+        input.facts.creditsRefunded ? "Credits were returned for this attempt." : "",
       ].filter(Boolean),
     },
     completed: {
-      headline: input.appName ? `Done — created ${input.appName}` : "Done — your app is ready to preview",
+      headline: input.previewReady ? "Preview ready" : input.appName ? `Done — created ${input.appName}` : "Build complete",
       bodyLines: [
         typeof filesCount === "number" && filesCount > 0
           ? `${filesCount} file${filesCount === 1 ? "" : "s"} created or updated`
           : "",
         input.pages?.length ? `Screens: ${input.pages.slice(0, 5).join(", ")}` : "",
-        input.previewReady === false ? "Preview is still preparing." : "You can preview it now.",
+        input.previewReady === false ? "Files saved — preview is still preparing." : "You can preview it now.",
       ].filter(Boolean),
     },
   };
 
+  let status = resolveWorkflowRunStatus(input.facts);
+  if (input.previewReady && (status === "failed_before_generation" || status === "failed_after_generation")) {
+    status = input.facts.failureKind === "repair_needed" ? "repair_needed" : "completed";
+  }
+  if (input.facts.hasFiles && status === "failed_before_generation") {
+    status = "failed_after_generation";
+  }
+
   const block = copy[status];
+  const showRefundLine = input.facts.creditsRefunded;
+  const showRepairActions =
+    status === "repair_needed" ||
+    status === "failed_after_generation" ||
+    status === "repair_failed";
+  const showPreviewActions = status === "completed" || status === "preview_ready";
   const variant: BuildRunSummaryResolved["variant"] =
     status === "completed" || status === "preview_ready"
       ? "completed"

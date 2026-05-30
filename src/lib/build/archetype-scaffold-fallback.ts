@@ -7,6 +7,7 @@ import {
 import { countComponentFiles } from "@/lib/build/import-graph";
 import { mergeRestaurantInventoryScaffold } from "@/lib/build/restaurant-inventory-scaffold";
 import { mergeGenericSaaSScaffold } from "@/lib/build/generic-saas-scaffold";
+import { mergeNonprofitCrmScaffold } from "@/lib/build/nonprofit-crm-scaffold";
 import {
   STANDARD_MIN_COMPONENTS,
   STANDARD_MIN_RENDERABLE_FILES,
@@ -67,13 +68,16 @@ export function hasFullScaffoldTree(archetypeId: string): boolean {
   return FULL_SCAFFOLD_ARCHETYPES.has(archetypeId as AppArchetypeId);
 }
 
-function mergeScaffoldForArchetype(
+export function mergeScaffoldForArchetype(
   archetypeId: AppArchetypeId,
   files: BuildFile[],
   appName = "Dream App",
 ): BuildFile[] {
   if (archetypeId === "restaurant_inventory") {
     return mergeRestaurantInventoryScaffold(files);
+  }
+  if (archetypeId === "crm") {
+    return mergeNonprofitCrmScaffold(files, appName);
   }
   if (FULL_SCAFFOLD_ARCHETYPES.has(archetypeId)) {
     return mergeGenericSaaSScaffold(archetypeId, files, appName);

@@ -23,9 +23,27 @@ function planMonthlyAllowance(kind: "build" | "action", planId: string): number 
   return kind === "build" ? monthlyTokensForPlan(id) : monthlyActionCreditsForPlan(id);
 }
 
+/** Spendable cap = plan allowance + explicit bonus (e.g. free 30 + grant 5 → 35). */
+export function creditBucketTotalCap(
+  bucket: CanonicalCreditBucket,
+  kind: "build" | "action",
+  planId: string,
+  isConfirmed: boolean,
+): number {
+  const monthlyAllowance = Math.max(
+    isConfirmed && bucket.planAllowance > 0
+      ? bucket.planAllowance
+      : planMonthlyAllowance(kind, planId),
+    0,
+  );
+  const explicitBonus = Math.max(bucket.bonusActive, 0);
+  const overflowBonus = Math.max(0, bucket.available - monthlyAllowance);
+  const bonusOrTopUp = explicitBonus > 0 ? explicitBonus : overflowBonus;
+  return Math.max(monthlyAllowance + bonusOrTopUp, bucket.available);
+}
+
 /**
- * Canonical remaining / monthly display. Never shows impossible values like 100/30
- * without separating bonus credits.
+ * Canonical remaining / cap display (e.g. 35/35 when plan is 30 + 5 bonus).
  */
 export function formatCreditBucketDisplay(
   bucket: CanonicalCreditBucket,
@@ -41,29 +59,18 @@ export function formatCreditBucketDisplay(
   );
   const explicitBonus = Math.max(bucket.bonusActive, 0);
   const rawRemaining = Math.max(0, bucket.available);
+  const overflowBonus = Math.max(0, rawRemaining - monthlyAllowance);
+  const bonusOrTopUp = explicitBonus > 0 ? explicitBonus : overflowBonus;
+  const totalCap = creditBucketTotalCap(bucket, kind, planId, isConfirmed);
 
-  const monthlyRemaining = Math.min(rawRemaining, monthlyAllowance);
-  const bonusOrTopUp =
-    explicitBonus > 0
-      ? explicitBonus
-      : Math.max(0, rawRemaining - monthlyAllowance);
-
-  const displayText =
-    bonusOrTopUp > 0.01
-      ? `${formatCreditAmount(monthlyRemaining)}/${formatCreditAmount(monthlyAllowance)}`
-      : `${formatCreditAmount(monthlyRemaining)}/${formatCreditAmount(monthlyAllowance)}`;
-
-  const secondaryText =
-    bonusOrTopUp > 0.01
-      ? `+ ${formatCreditAmount(bonusOrTopUp)} bonus`
-      : null;
+  const displayText = `${formatCreditAmount(rawRemaining)}/${formatCreditAmount(totalCap)}`;
 
   return {
-    remaining: monthlyRemaining,
+    remaining: rawRemaining,
     monthlyAllowance,
     bonusOrTopUp,
     displayText,
-    secondaryText,
+    secondaryText: null,
   };
 }
 

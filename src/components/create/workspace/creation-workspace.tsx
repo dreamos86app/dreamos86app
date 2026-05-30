@@ -795,7 +795,7 @@ export function CreationWorkspace({
               build={build}
               action={action}
               planId={planId}
-              loading={creditsLoading}
+              loading={creditsLoading || !isConfirmed}
               variant="compact"
               className="mb-3"
               showUpgrade={build.available < build.planAllowance * 0.15}

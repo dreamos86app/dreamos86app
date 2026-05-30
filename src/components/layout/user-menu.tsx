@@ -177,7 +177,7 @@ export function UserMenu() {
                 action={action}
                 planId={effectivePlanId}
                 isConfirmed={isConfirmed}
-                loading={loading}
+                loading={loading || !isConfirmed}
                 error={error}
                 variant="popover"
                 onRetry={() => void syncFromDB({ force: true, reason: "manual" })}
